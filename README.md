@@ -54,3 +54,11 @@ State update:
   - Int speed
 * If lose, show lose screen
   - Int lose
+
+Brick Threads:
+* Stop Thread when all bricks within thread are broken
+* Message queue ball location from ball thread
+* 2 Golden brick threads at a time
+  - Use counting semaphore to implement imaginary golden-brick shared resource
+  - Golden threads release semaphore (it's golden state) at scores of 10s
+
