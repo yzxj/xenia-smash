@@ -23,33 +23,35 @@
 #include <sys/ipc.h>
 #include <sys/timer.h>
 
-#define DISPLAY_COLUMNS  640
-#define DISPLAY_ROWS     480
-#define RECT_WIDTH 	     40
-#define RECT_LENGTH      240
-#define RECT_GAP 	       10
-#define X1 		 	         50
-#define X2 			         X1+RECT_WIDTH+RECT_GAP
-#define X3 			         X2+RECT_WIDTH+RECT_GAP
-#define X4 			         X3+RECT_WIDTH+RECT_GAP
-#define Y1 			         50
-#define INIT_BALL_X 		 288
-#define INIT_BALL_Y 		 400
-#define BALL_SPEED_X     10
-#define BALL_SPEED_Y     10
-#define BALL_DIR 	       180
+#define DISPLAY_COLUMNS       640
+#define DISPLAY_ROWS          480
+#define RECT_WIDTH 	          40
+#define RECT_LENGTH           240
+#define RECT_GAP 	            10
+#define X1 		 	              50
+#define X2 			              X1+RECT_WIDTH+RECT_GAP
+#define X3 			              X2+RECT_WIDTH+RECT_GAP
+#define X4 			              X3+RECT_WIDTH+RECT_GAP
+#define Y1 			              50
+#define INIT_BALL_X 		      288
+#define INIT_BALL_Y 		      400
+#define INIT_BALL_SPEED_X     10
+#define INIT_BALL_SPEED_Y     10
+#define MAX_BALL_SPEED        40
+#define MIN_BALL_SPEED        2
+#define BALL_DIR 	            180
 
-#define MSG_COLUMN	     1
-#define MSG_BALL	       2
+#define MSG_COLUMN	          1
+#define MSG_BALL	            2
 
 // Mailbox Declaration
-#define MY_CPU_ID 			  XPAR_CPU_ID
-#define MBOX_DEVICE_ID		XPAR_MBOX_0_DEVICE_ID
+#define MY_CPU_ID 			      XPAR_CPU_ID
+#define MBOX_DEVICE_ID		    XPAR_MBOX_0_DEVICE_ID
 static XMbox Mbox;	/* Instance of the Mailbox driver */
 
 // MUTEX ID PARAMETER for HW Mutex
-#define MUTEX_DEVICE_ID 	XPAR_MUTEX_0_IF_1_DEVICE_ID
-#define MUTEX_NUM 			  0
+#define MUTEX_DEVICE_ID 	    XPAR_MUTEX_0_IF_1_DEVICE_ID
+#define MUTEX_NUM 			      0
 
 XMutex Mutex;
 XGpio gpPB; //PB device instance.
@@ -72,8 +74,11 @@ volatile int new_BALL_X = INIT_BALL_X;
 volatile int new_BALL_Y = INIT_BALL_Y;
 volatile int bar_x = DISPLAY_COLUMNS / 2;
 volatile int bar_y = DISPLAY_ROWS / 2;
+volatile int bar_region = 0;
 volatile int button_pressed = 0;
-
+volatile int total_score = 0;
+volatile int ballSpeed_X = INIT_BALL_SPEED_X;
+volatile int ballSpeed_Y = INIT_BALL_SPEED_Y;
 
 //---------------------------------------
 
@@ -137,14 +142,14 @@ void* thread_mb_controller () {
 void* thread_ball () {
   while(1) {
     // move the ball upwards && upper ceiling boundary check
-    if ((new_BALL_Y-BALL_SPEED_Y) >= 67) {
-      new_BALL_Y -= BALL_SPEED_Y;
+    if ((new_BALL_Y-ballspeed_Y) >= 67) {
+      new_BALL_Y -= ballSpeed_Y;
       // update every 1000ms
       sleep(1200);
     }
     // move the ball downwards && lower ceiling boundary check
-    if ((new_BALL_Y+BALL_SPEED_Y) <= 398) {
-      new_BALL_Y += BALL_SPEED_Y;
+    if ((new_BALL_Y+ballSpeed_Y) <= 398) {
+      new_BALL_Y += ballSpeed_Y;
       // update every 1000ms
       sleep(1200);
     }
@@ -228,7 +233,11 @@ void* thread_bar () {
 
 void* thread_scoreboard () {
   while(1) {
-    // do something
+    // Increase ball speed by 25fps for every 10 points gained
+    if ((ballSpeed_X != MAX_BALL_SPEED) && (ballSpeed_Y != MAX_BALL_SPEED)) {
+      ballSpeed_X = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
+      ballSpeed_Y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
+    }
   }
 }
 
