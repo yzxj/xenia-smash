@@ -10,9 +10,12 @@
 #include "xmk.h"
 #include "xmbox.h"
 #include "xmutex.h"
+#include "xgpio.h"
+#include "xuartlite.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <xparameters.h>
 #include <pthread.h>
 #include <errno.h>
@@ -20,24 +23,26 @@
 #include <sys/ipc.h>
 #include <sys/timer.h>
 
+#define DISPLAY_COLUMNS  640
+#define DISPLAY_ROWS     480
 #define RECT_WIDTH 	     40
 #define RECT_LENGTH      240
 #define RECT_GAP 	       10
-#define RECT_COLOR 	     0x000000ff
 #define X1 		 	         50
 #define X2 			         X1+RECT_WIDTH+RECT_GAP
 #define X3 			         X2+RECT_WIDTH+RECT_GAP
 #define X4 			         X3+RECT_WIDTH+RECT_GAP
 #define Y1 			         50
-#define BALL_X 		       10
-#define BALL_Y 		       10
+#define INIT_BALL_X 		 288
+#define INIT_BALL_Y 		 400
+#define BALL_SPEED_X     10
+#define BALL_SPEED_Y     10
 #define BALL_DIR 	       180
-#define BALL_COLOR 	     0x0000ff00
 
 #define MSG_COLUMN	     1
 #define MSG_BALL	       2
 
-// mailbox declaration
+// Mailbox Declaration
 #define MY_CPU_ID 			  XPAR_CPU_ID
 #define MBOX_DEVICE_ID		XPAR_MBOX_0_DEVICE_ID
 static XMbox Mbox;	/* Instance of the Mailbox driver */
@@ -45,7 +50,9 @@ static XMbox Mbox;	/* Instance of the Mailbox driver */
 // MUTEX ID PARAMETER for HW Mutex
 #define MUTEX_DEVICE_ID 	XPAR_MUTEX_0_IF_1_DEVICE_ID
 #define MUTEX_NUM 			  0
+
 XMutex Mutex;
+XGpio gpPB; //PB device instance.
 
 struct msg {
   int id,msg_type,x,y,w,l,d;
@@ -60,7 +67,13 @@ typedef struct {
 pthread_attr_t attr;
 struct sched_param sched_par;
 pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, bar, scoreboard;
-volatile int taskrunning;
+
+volatile int new_BALL_X = INIT_BALL_X; 
+volatile int new_BALL_Y = INIT_BALL_Y;
+volatile int bar_x = DISPLAY_COLUMNS / 2;
+volatile int bar_y = DISPLAY_ROWS / 2;
+volatile int button_pressed = 0;
+
 
 //---------------------------------------
 
@@ -107,19 +120,34 @@ void send (int id, int msg_type, int x, int y, int w, int l, int d, uint32_t c) 
 
 static void MailboxExample_Receive(XMbox *MboxInstancePtr, ball_msg *ball_pointer) {
   XMbox_ReadBlocking(MboxInstancePtr,	ball_pointer, 16);
-  xil_printf("Display received : Ball, x = %d  y= %d  d= %d  c=%08x \r\n", ball_pointer->x, ball_pointer->y, ball_pointer->dir, ball_pointer->col);
+//  xil_printf("Display received : Ball, x = %d  y= %d  d= %d  c=%08x \r\n", ball_pointer->x, ball_pointer->y, ball_pointer->dir, ball_pointer->col);
 }
 
+void shiftBar_xy(int shift_x, int shift_y) {
+  x = (x + shift_x + DISPLAY_COLUMNS) % DISPLAY_COLUMNS;
+  y = (y + shift_y + DISPLAY_ROWS) % DISPLAY_ROWS;
+}
 
 void* thread_mb_controller () {
   while(1) {
-    // do something
+    // send mailbox to MB1
   }
 }
 
 void* thread_ball () {
   while(1) {
-    // do something
+    // move the ball upwards && upper ceiling boundary check
+    if ((new_BALL_Y-BALL_SPEED_Y) >= 67) {
+      new_BALL_Y -= BALL_SPEED_Y;
+      // update every 1000ms
+      sleep(1200);
+    }
+    // move the ball downwards && lower ceiling boundary check
+    if ((new_BALL_Y+BALL_SPEED_Y) <= 398) {
+      new_BALL_Y += BALL_SPEED_Y;
+      // update every 1000ms
+      sleep(1200);
+    }
   }
 }
 
@@ -185,7 +213,16 @@ void* thread_brick_col_10 () {
 
 void* thread_bar () {
   while(1) {
-    // do something
+    switch (button_pressed) {
+      case 4:
+        shiftBar_xy(-4,0);
+      break;
+      case 8:
+        shiftBar_xy(4,0);
+      break;
+  }
+    // Update every 10ms;
+    sleep(120);
   }
 }
 
@@ -195,8 +232,15 @@ void* thread_scoreboard () {
   }
 }
 
+static void gpPBIntHandler(void *arg) {
+  unsigned char val;
+  XGpio_InterruptClear(&gpPB,1);
+  button_pressed = XGpio_DiscreteRead(&gpPB, 1);
+  //  xil_printf("PB event, val = %d \r\n", val); // for testing.
+}
+
 /** 
-  *  Main - Inititialization for HW Mutex, Mailbox and Threads
+  *  Main - Inititialization for HW+SW Mutex, GPIOs, Mailbox and Threads
   */
 
 int main_prog(void) {   // This thread is statically created (as configured in the kernel configuration) and has priority 0 (This is the highest possible)
@@ -224,6 +268,27 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   }
 
   print("-- Entering main_prog() uB0 RECEIVER--\r\n");
+
+  /** ----------------------------------------------------------
+    *   Initialize and Configure GPIO interrupts for moving bar
+    * ----------------------------------------------------------
+    */
+
+  xil_printf("Initializing PB\r\n");
+    // Initialise the PB instance
+  XGpio_Initialize(&gpPB, XPAR_GPIO_0_DEVICE_ID);
+    // set PB gpio direction to input.
+  XGpio_SetDataDirection(&gpPB, 1, 0x000000FF);
+
+  xil_printf("Enabling PB interrupts\r\n");
+     //global enable
+  XGpio_InterruptGlobalEnable(&gpPB);
+    // interrupt enable. both global enable and this function should be called to enable gpio interrupts.
+  XGpio_InterruptEnable(&gpPB,1);
+    //register the handler with xilkernel
+  register_int_handler(XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_0_IP2INTC_IRPT_INTR, gpPBIntHandler, &gpPB);
+    //enable the interrupt in xilkernel
+  enable_interrupt(XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_0_IP2INTC_IRPT_INTR);
 
 
   // Configure and init mailbox
