@@ -57,7 +57,7 @@ XMutex Mutex;
 XGpio gpPB; 				//PB device instance.
 
 struct msg {
-  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, bar_x_pos;
+  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, bar_x_pos, total_score;
 };
 
 typedef struct {
@@ -87,7 +87,7 @@ volatile int newGold_ID = 0;
  * Function to send data struct over to MB1 via mailbox
  * ----------------------------------------------------
  */
-void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int bar_x_pos) {
+void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int bar_x_pos, int total_score) {
 
   struct msg send_msg;
   int msgid;
@@ -98,13 +98,14 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
   send_msg.ball_x_pos = ball_x_pos;
   send_msg.ball_y_pos = ball_y_pos;
   send_msg.bar_x_pos = bar_x_pos;
+  send_msg.tscore = tscore;
 
   msgid = msgget (id, IPC_CREAT ) ;
   if( msgid == -1 ) {
     xil_printf ("PRODCON: Producer -- ERROR while opening Message Queue. Errno: %d\r\n", errno) ;
     pthread_exit (&errno);
   }
-  if( msgsnd (msgid, &send_msg, 32, 0) < 0 ) { // blocking send
+  if( msgsnd (msgid, &send_msg, 32, 0) < 0 ) { 										// Blocking send
     xil_printf ("PRODCON: Producer -- msgsnd of message(%d) ran into ERROR. Errno: %d. Halting..\r\n", errno);
     pthread_exit(&errno);
   }
@@ -122,7 +123,7 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
   int randomizer = rand() % 3;
 
   if (randomizer == 1) {
-    sem_wait(&sem);					//	decrement the value of semaphore s by 1; use up 1 sema resource
+    sem_wait(&sem);																	// Decrement the value of semaphore s by 1 (use up 1 sema resource)
 
     pthread_mutex_lock (&mutex);
     oldGold_ID=newGold_ID;
@@ -135,11 +136,10 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
 }
 
 //---------------------------------------
-static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {			//TODO: Reorganize data struct coming into MB0
+static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {		//TODO: Reorganize data struct coming into MB0
   XMbox_ReadBlocking(MboxInstancePtr, inbox_pointer, 16);
   if (inbox_pointer->display_updated)
-	sem_post(&sem);														// increment the value of semaphore s by 1; free up 1 semaphore count
-
+	sem_post(&sem);																	// Increment the value of semaphore s by 1 (free up 1 semaphore count)
 }
 
 void shiftBar_xy(int shift_x, int shift_y) {
@@ -149,8 +149,8 @@ void shiftBar_xy(int shift_x, int shift_y) {
 
 void* thread_mb_controller () {
   while(1) {
-    send(1, oldGold_ID, newGold_ID, new_BALL_X, new_BALL_Y, bar_x);		// send mailbox to MB1
-    Mailbox_Receive(&Mbox, &ball);										// Read from mailbox
+    send(1, oldGold_ID, newGold_ID, new_BALL_X, new_BALL_Y, bar_x, total_score);		// Send mailbox to MB1
+    Mailbox_Receive(&Mbox, &ball);														// Read from mailbox
   }
 }
 
@@ -264,7 +264,7 @@ static void gpPBIntHandler(void *arg) {
 }
 
 /** 
-  *  Main - Inititialization for HW+SW Mutex, GPIOs, Mailbox and Threads
+  *  Main - Inititialization for Semaphore, HW+SW Mutex, GPIOs, Mailbox and Threads
   */
 
 int main_prog(void) {   // This thread is statically created (as configured in the kernel configuration) and has priority 0 (This is the highest possible)
