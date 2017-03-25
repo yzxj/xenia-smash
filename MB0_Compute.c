@@ -1,11 +1,10 @@
-/*
--- --------------------------------------------------------------------------
--- Author         : Lee-Hong Lau and Justin Yeo
--- Date           : 22/03/2017
--- Version        : V1.0
--- License        : MIT
------------------------------------------------------------------------------
-*/
+/* ================================================*
+ * Author         : Lee-Hong Lau and Justin Yeo	   *	
+ * Date           : 22/03/2017					   *
+ * Version        : V1.0						   *	
+ * License        : MIT 						   *
+ * ================================================*
+ */
 #include "sys/init.h"
 #include "xmk.h"
 #include "xmbox.h"
@@ -16,6 +15,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 #include <xparameters.h>
 #include <pthread.h>
 #include <errno.h>
@@ -27,38 +27,37 @@
 #define DISPLAY_ROWS          480
 #define RECT_WIDTH 	          40
 #define RECT_LENGTH           240
-#define RECT_GAP 	            10
-#define X1 		 	              50
-#define X2 			              X1+RECT_WIDTH+RECT_GAP
-#define X3 			              X2+RECT_WIDTH+RECT_GAP
-#define X4 			              X3+RECT_WIDTH+RECT_GAP
-#define Y1 			              50
-#define INIT_BALL_X 		      288
-#define INIT_BALL_Y 		      400
+#define RECT_GAP 	          10
+#define X1 		 	          50
+#define X2 			          X1+RECT_WIDTH+RECT_GAP
+#define X3 			          X2+RECT_WIDTH+RECT_GAP
+#define X4 			          X3+RECT_WIDTH+RECT_GAP
+#define Y1 			          50
+#define INIT_BALL_X 		  288
+#define INIT_BALL_Y 		  400
 #define INIT_BALL_SPEED_X     10
 #define INIT_BALL_SPEED_Y     10
 #define MAX_BALL_SPEED        40
 #define MIN_BALL_SPEED        2
-#define BALL_DIR 	            180
+#define BALL_DIR 	          180
 
 #define MSG_COLUMN	          1
-#define MSG_BALL	            2
+#define MSG_BALL	          2
 
-// Mailbox Declaration
-#define MY_CPU_ID 			      XPAR_CPU_ID
-#define MBOX_DEVICE_ID		    XPAR_MBOX_0_DEVICE_ID
-static XMbox Mbox;	/* Instance of the Mailbox driver */
+/*	Mailbox Declaration	*/
+#define MY_CPU_ID 			  XPAR_CPU_ID
+#define MBOX_DEVICE_ID		  XPAR_MBOX_0_DEVICE_ID
+static XMbox Mbox;			//Instance of the Mailbox driver
 
-// MUTEX ID PARAMETER for HW Mutex
+/*	MUTEX ID PARAMETER for HW Mutex	*/ 	
 #define MUTEX_DEVICE_ID 	    XPAR_MUTEX_0_IF_1_DEVICE_ID
 #define MUTEX_NUM 			      0
 
 XMutex Mutex;
-XGpio gpPB; //PB device instance.
+XGpio gpPB; 				//PB device instance.
 
 struct msg {
-  int id,msg_type,x,y,w,l,d;
-  uint32_t c;
+  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, bar_x_pos;
 };
 
 typedef struct {
@@ -69,6 +68,7 @@ typedef struct {
 pthread_attr_t attr;
 struct sched_param sched_par;
 pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, bar, scoreboard;
+pthread_mutex_t mutex;
 
 volatile int new_BALL_X = INIT_BALL_X; 
 volatile int new_BALL_Y = INIT_BALL_Y;
@@ -80,29 +80,24 @@ volatile int total_score = 0;
 volatile int ballSpeed_X = INIT_BALL_SPEED_X;
 volatile int ballSpeed_Y = INIT_BALL_SPEED_Y;
 
-//---------------------------------------
+volatile int oldGold_ID = 0;
+volatile int newGold_ID = 0;
 
-void send (int id, int msg_type, int x, int y, int w, int l, int d, uint32_t c) {
+/* ----------------------------------------------------
+ * Function to send data struct over to MB1 via mailbox
+ * ----------------------------------------------------
+ */
+void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int bar_x_pos) {
 
   struct msg send_msg;
   int msgid;
 
   send_msg.id = id;
-  send_msg.msg_type = msg_type;
-  send_msg.x = x;
-  send_msg.y = y;
-  send_msg.l = l;
-  send_msg.d = d;
-  send_msg.c = c;
-
-  //ENTER YOUR CODE HERE TO SEND DATA TO THREAD DISPLAY
-  XMutex_Lock(&Mutex, MUTEX_NUM);
-  if (msg_type == MSG_COLUMN) {
-    xil_printf("PRODCON: Producer -- Start Column %d!\r\n", id);
-  } else {
-    xil_printf("PRODCON: Producer -- Start Ball!\r\n");
-  }
-  XMutex_Unlock(&Mutex, MUTEX_NUM);
+  send_msg.old_gold_col = old_gold_col;
+  send_msg.new_gold_col = new_gold_col;
+  send_msg.ball_x_pos = ball_x_pos;
+  send_msg.ball_y_pos = ball_y_pos;
+  send_msg.bar_x_pos = bar_x_pos;
 
   msgid = msgget (id, IPC_CREAT ) ;
   if( msgid == -1 ) {
@@ -117,25 +112,45 @@ void send (int id, int msg_type, int x, int y, int w, int l, int d, uint32_t c) 
   XMutex_Lock(&Mutex, MUTEX_NUM);
   print("PRODCON: Producer done !\r\n");
   XMutex_Unlock(&Mutex, MUTEX_NUM);
+}
 
-  pthread_exit(0);
+/* ------------------------------------------------------------------
+ * Function to compete for counting semaphore, and attain gold status
+ * ------------------------------------------------------------------
+ */
+ void compete_gold(int max, int ID) {
+  int randomizer = rand() % 3;
+
+  if (randomizer == 1) {
+    sem_wait(&sem);					//	decrement the value of semaphore s by 1; use up 1 sema resource
+
+    pthread_mutex_lock (&mutex);
+    oldGold_ID=newGold_ID;
+    newGold_ID=ID;
+    pthread_mutex_unlock (&mutex);
+
+  } else {
+    sleep(100);
+  }
 }
 
 //---------------------------------------
+static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {			//TODO: Reorganize data struct coming into MB0
+  XMbox_ReadBlocking(MboxInstancePtr, inbox_pointer, 16);
+  if (inbox_pointer->display_updated)
+	sem_post(&sem);														// increment the value of semaphore s by 1; free up 1 semaphore count
 
-static void MailboxExample_Receive(XMbox *MboxInstancePtr, ball_msg *ball_pointer) {
-  XMbox_ReadBlocking(MboxInstancePtr,	ball_pointer, 16);
-//  xil_printf("Display received : Ball, x = %d  y= %d  d= %d  c=%08x \r\n", ball_pointer->x, ball_pointer->y, ball_pointer->dir, ball_pointer->col);
 }
 
 void shiftBar_xy(int shift_x, int shift_y) {
-  x = (x + shift_x + DISPLAY_COLUMNS) % DISPLAY_COLUMNS;
-  y = (y + shift_y + DISPLAY_ROWS) % DISPLAY_ROWS;
+  bar_x = (x + shift_x + DISPLAY_COLUMNS) % DISPLAY_COLUMNS;
+  bar_y = (y + shift_y + DISPLAY_ROWS) % DISPLAY_ROWS;
 }
 
 void* thread_mb_controller () {
   while(1) {
-    // send mailbox to MB1
+    send(1, oldGold_ID, newGold_ID, new_BALL_X, new_BALL_Y, bar_x);		// send mailbox to MB1
+    Mailbox_Receive(&Mbox, &ball);										// Read from mailbox
   }
 }
 
@@ -158,62 +173,62 @@ void* thread_ball () {
 
 void* thread_brick_col_1 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 1);  
+	}
 }
 
 void* thread_brick_col_2 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 2);  
+	}
 }
 
 void* thread_brick_col_3 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 3);  
+	}
 }
 
 void* thread_brick_col_4 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 4);  
+	}
 }
 
 void* thread_brick_col_5 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 5);  
+	}
 }
 
 void* thread_brick_col_6 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 6);  
+	}
 }
 
 void* thread_brick_col_7 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 7);  
+	}
 }
 
 void* thread_brick_col_8 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 8);  
+	}
 }
 
 void* thread_brick_col_9 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 9);  
+	}
 }
 
 void* thread_brick_col_10 () {
   while(1) {
-    // do something
-  }
+    compete_gold(0x000f, 10);  
+	}
 }
 
 void* thread_bar () {
@@ -258,6 +273,11 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   int Status;
   XMutex_Config *MutexConfigPtr;
   XMbox_Config *ConfigPtr;
+
+  // Initialize semaphore for resource competion
+  if( sem_init(&sem, 1, 2) < 0 ) {
+    print("Error while initializing semaphore sem.\r\n");
+  }
 
   // Init SW Mutex
   ret = pthread_mutex_init (&uart_mutex, NULL);
