@@ -1,11 +1,11 @@
 /* ================================================*
  * Author         : Lee-Hong Lau and Justin Yeo	   *	
- * Date           : 22/03/2017					   *
- * Version        : V1.0						   *	
- * License        : MIT 						   *
+ * Date           : 22/03/2017					           *
+ * Version        : V1.0						               *	
+ * License        : MIT 						               *
  * ================================================*
  */
-/*#include "sys/init.h"
+#include "sys/init.h"
 #include "xmk.h"
 #include "xmbox.h"
 #include "xmutex.h"
@@ -21,37 +21,37 @@
 #include <errno.h>
 #include <sys/msg.h>
 #include <sys/ipc.h>
-#include <sys/timer.h>*/
+#include <sys/timer.h>
 
-#define DISPLAY_COLUMNS       640
-#define DISPLAY_ROWS          480
-#define RECT_WIDTH 	          40
-#define RECT_LENGTH           240
-#define RECT_GAP 	          10
-#define X1 		 	          50
-#define X2 			          X1+RECT_WIDTH+RECT_GAP
-#define X3 			          X2+RECT_WIDTH+RECT_GAP
-#define X4 			          X3+RECT_WIDTH+RECT_GAP
-#define Y1 			          50
-#define INIT_BALL_X 		  288
-#define INIT_BALL_Y 		  400
-#define INIT_BALL_SPEED_X     10
-#define INIT_BALL_SPEED_Y     10
-#define MAX_BALL_SPEED        40
-#define MIN_BALL_SPEED        2
-#define BALL_DIR 	          180
+#define DISPLAY_COLUMNS         640
+#define DISPLAY_ROWS            480
+#define RECT_WIDTH 	            40
+#define RECT_LENGTH             240
+#define RECT_GAP 	              10
+#define X1 		 	                50
+#define X2 			                X1+RECT_WIDTH+RECT_GAP
+#define X3 			                X2+RECT_WIDTH+RECT_GAP
+#define X4 			                X3+RECT_WIDTH+RECT_GAP
+#define Y1 			                50
+#define INIT_BALL_X 		        288
+#define INIT_BALL_Y 		        400
+#define INIT_BALL_SPEED_X       10
+#define INIT_BALL_SPEED_Y       10
+#define MAX_BALL_SPEED          40
+#define MIN_BALL_SPEED          2
+#define BALL_DIR 	              180
 
-#define MSG_COLUMN	          1
-#define MSG_BALL	          2
+#define MSG_COLUMN	            1
+#define MSG_BALL	              2
 
 /*	Mailbox Declaration	*/
-#define MY_CPU_ID 			  XPAR_CPU_ID
-#define MBOX_DEVICE_ID		  XPAR_MBOX_0_DEVICE_ID
+#define MY_CPU_ID 			        XPAR_CPU_ID
+#define MBOX_DEVICE_ID		      XPAR_MBOX_0_DEVICE_ID
 static XMbox Mbox;			//Instance of the Mailbox driver
 
 /*	MUTEX ID PARAMETER for HW Mutex	*/ 	
-#define MUTEX_DEVICE_ID 	    XPAR_MUTEX_0_IF_1_DEVICE_ID
-#define MUTEX_NUM 			      0
+#define MUTEX_DEVICE_ID 	      XPAR_MUTEX_0_IF_1_DEVICE_ID
+#define MUTEX_NUM 			        0
 
 XMutex Mutex;
 XGpio gpPB; 				//PB device instance.
@@ -69,7 +69,6 @@ pthread_attr_t attr;
 struct sched_param sched_par;
 pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, bar, scoreboard;
 pthread_mutex_t mutex, uart_mutex;
-
 
 // declare the semaphore
 sem_t sem;
@@ -302,25 +301,6 @@ int main_prog(void) {   // This thread is statically created (as configured in t
 
   print("-- Entering main_prog() uB0 RECEIVER--\r\n");
 
-  /** ----------------------------------------------------------
-    *   Initialize and Configure GPIO interrupts for moving bar
-    * ----------------------------------------------------------
-    */
-
-  xil_printf("Initializing PB\r\n");
-    // Initialise the PB instance
-  XGpio_Initialize(&gpPB, XPAR_GPIO_0_DEVICE_ID);
-    // set PB gpio direction to input.
-  XGpio_SetDataDirection(&gpPB, 1, 0x000000FF);
-
-  xil_printf("Enabling PB interrupts\r\n");
-     //global enable
-  XGpio_InterruptGlobalEnable(&gpPB);
-    // interrupt enable. both global enable and this function should be called to enable gpio interrupts.
-  XGpio_InterruptEnable(&gpPB,1);
-    //register the handler with xilkernel
-  register_int_handler(XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_0_IP2INTC_IRPT_INTR, gpPBIntHandler, &gpPB);
-    //enable the interrupt in xilkernel
   enable_interrupt(XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_0_IP2INTC_IRPT_INTR);
 
 
@@ -343,7 +323,6 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     * thread_mb_controller  (highest priority)  : Mailbox Controller to pipe data to MB1  
     * thread_ball                               : Ball                                    
     * thread_brick_col_1 ~ thread_brick_col_10  : Brick Columns
-    * thread_bar                                : Bar
     * thread_scoreboard     (lowest priority)   : Scoreboard
     * -----------------------------------------------------------------------------------
     */
@@ -493,20 +472,8 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 10 launched with ID %d \r\n",col10);
   }
 
-    // Priority 13 for thread_bar
+    // Priority 13 for thread_scoreboard
   sched_par.sched_priority = 13;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_bar
-  ret = pthread_create (&bar, &attr, (void*)thread_bar, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_bar...\r\n", ret);
-  }
-  else {
-    xil_printf ("Bar Thread launched with ID %d \r\n",bar);
-  }
-
-    // Priority 14 for thread_scoreboard
-  sched_par.sched_priority = 14;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_scoreboard
   ret = pthread_create (&scoreboard, &attr, (void*)thread_scoreboard, NULL);
