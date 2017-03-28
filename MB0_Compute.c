@@ -9,7 +9,6 @@
 #include "xmk.h"
 #include "xmbox.h"
 #include "xmutex.h"
-#include "xgpio.h"
 #include "xuartlite.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,7 +53,6 @@ static XMbox Mbox;			//Instance of the Mailbox driver
 #define MUTEX_NUM 			        0
 
 XMutex Mutex;
-XGpio gpPB; 				//PB device instance.
 
 struct msg {
   int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, total_score;
@@ -277,9 +275,6 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   }
 
   print("-- Entering main_prog() uB0 RECEIVER--\r\n");
-
-  enable_interrupt(XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_0_IP2INTC_IRPT_INTR);
-
 
   // Configure and init mailbox
   ConfigPtr = XMbox_LookupConfig(MBOX_DEVICE_ID );
