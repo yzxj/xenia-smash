@@ -27,6 +27,7 @@ Implementation
 Microblaze0
 * Update states (compute)
 * Send to MB1
+
 Microblaze1
 * Read state (blocking wait)
 * Update display
