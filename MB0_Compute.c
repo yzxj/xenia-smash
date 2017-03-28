@@ -5,7 +5,7 @@
  * License        : MIT 						   *
  * ================================================*
  */
-#include "sys/init.h"
+/*#include "sys/init.h"
 #include "xmk.h"
 #include "xmbox.h"
 #include "xmutex.h"
@@ -21,7 +21,7 @@
 #include <errno.h>
 #include <sys/msg.h>
 #include <sys/ipc.h>
-#include <sys/timer.h>
+#include <sys/timer.h>*/
 
 #define DISPLAY_COLUMNS       640
 #define DISPLAY_ROWS          480
@@ -68,20 +68,24 @@ typedef struct {
 pthread_attr_t attr;
 struct sched_param sched_par;
 pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, bar, scoreboard;
-pthread_mutex_t mutex;
+pthread_mutex_t mutex, uart_mutex;
 
-volatile int new_BALL_X = INIT_BALL_X; 
-volatile int new_BALL_Y = INIT_BALL_Y;
+
+// declare the semaphore
+sem_t sem;
+
+volatile int new_ball_x = INIT_BALL_X; 
+volatile int new_ball_y = INIT_BALL_Y;
 volatile int bar_x = DISPLAY_COLUMNS / 2;
 volatile int bar_y = DISPLAY_ROWS / 2;
 volatile int bar_region = 0;
 volatile int button_pressed = 0;
 volatile int total_score = 0;
-volatile int ballSpeed_X = INIT_BALL_SPEED_X;
-volatile int ballSpeed_Y = INIT_BALL_SPEED_Y;
+volatile int ballspeed_x = INIT_BALL_SPEED_X;
+volatile int ballspeed_y = INIT_BALL_SPEED_Y;
 
-volatile int oldGold_ID = 0;
-volatile int newGold_ID = 0;
+volatile int oldgold_id = 0;
+volatile int newgold_id = 0;
 
 /* ----------------------------------------------------
  * Function to send data struct over to MB1 via mailbox
@@ -126,8 +130,8 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
     sem_wait(&sem);																	// Decrement the value of semaphore s by 1 (use up 1 sema resource)
 
     pthread_mutex_lock (&mutex);
-    oldGold_ID=newGold_ID;
-    newGold_ID=ID;
+    oldgold_id=newgold_id;
+    newgold_id=ID;
     pthread_mutex_unlock (&mutex);
 
   } else {
@@ -143,13 +147,13 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {		
 }
 
 void shiftBar_xy(int shift_x, int shift_y) {
-  bar_x = (x + shift_x + DISPLAY_COLUMNS) % DISPLAY_COLUMNS;
-  bar_y = (y + shift_y + DISPLAY_ROWS) % DISPLAY_ROWS;
+  bar_x = (bar_x + shift_x + DISPLAY_COLUMNS) % DISPLAY_COLUMNS;
+  bar_y = (bar_y + shift_y + DISPLAY_ROWS) % DISPLAY_ROWS;
 }
 
 void* thread_mb_controller () {
   while(1) {
-    send(1, oldGold_ID, newGold_ID, new_BALL_X, new_BALL_Y, bar_x, total_score);		// Send mailbox to MB1
+    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, bar_x, total_score);		// Send mailbox to MB1
     Mailbox_Receive(&Mbox, &ball);														// Read from mailbox
   }
 }
@@ -157,14 +161,14 @@ void* thread_mb_controller () {
 void* thread_ball () {
   while(1) {
     // move the ball upwards && upper ceiling boundary check
-    if ((new_BALL_Y-ballspeed_Y) >= 67) {
-      new_BALL_Y -= ballSpeed_Y;
+    if ((new_ball_y-ballspeed_y) >= 67) {
+      new_ball_y -= ballspeed_y;
       // update every 1000ms
       sleep(1200);
     }
     // move the ball downwards && lower ceiling boundary check
-    if ((new_BALL_Y+ballSpeed_Y) <= 398) {
-      new_BALL_Y += ballSpeed_Y;
+    if ((new_ball_y+ballspeed_y) <= 398) {
+      new_ball_y += ballspeed_y;
       // update every 1000ms
       sleep(1200);
     }
@@ -249,9 +253,9 @@ void* thread_bar () {
 void* thread_scoreboard () {
   while(1) {
     // Increase ball speed by 25fps for every 10 points gained
-    if ((ballSpeed_X != MAX_BALL_SPEED) && (ballSpeed_Y != MAX_BALL_SPEED)) {
-      ballSpeed_X = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
-      ballSpeed_Y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
+    if ((ballspeed_x != MAX_BALL_SPEED) && (ballspeed_y != MAX_BALL_SPEED)) {
+      ballspeed_x = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
+      ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
     }
   }
 }
