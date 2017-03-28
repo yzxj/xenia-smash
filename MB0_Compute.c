@@ -1,15 +1,14 @@
 /* ================================================*
- * Author         : Lee-Hong Lau and Justin Yeo	   *	
- * Date           : 22/03/2017					           *
- * Version        : V1.0						               *	
- * License        : MIT 						               *
+ * Author         : Lee-Hong Lau and Justin Yeo	   *
+ * Date           : 22/03/2017					   *
+ * Version        : V1.0						   *
+ * License        : MIT 						   *
  * ================================================*
  */
 #include "sys/init.h"
 #include "xmk.h"
 #include "xmbox.h"
 #include "xmutex.h"
-#include "xuartlite.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -48,7 +47,7 @@
 #define MBOX_DEVICE_ID		      XPAR_MBOX_0_DEVICE_ID
 static XMbox Mbox;			//Instance of the Mailbox driver
 
-/*	MUTEX ID PARAMETER for HW Mutex	*/ 	
+/*	MUTEX ID PARAMETER for HW Mutex	*/
 #define MUTEX_DEVICE_ID 	      XPAR_MUTEX_0_IF_1_DEVICE_ID
 #define MUTEX_NUM 			        0
 
@@ -72,7 +71,7 @@ pthread_mutex_t mutex, uart_mutex;
 sem_t sem;
 
 volatile int ball_dir = 0; 								// 0: up, 1: down
-volatile int new_ball_x = INIT_BALL_X; 
+volatile int new_ball_x = INIT_BALL_X;
 volatile int new_ball_y = INIT_BALL_Y;
 volatile int total_score = 0;
 volatile int ballspeed_x = INIT_BALL_SPEED_X;
@@ -94,21 +93,9 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
   send_msg.new_gold_col = new_gold_col;
   send_msg.ball_x_pos = ball_x_pos;
   send_msg.ball_y_pos = ball_y_pos;
-  send_msg.tscore = tscore;
+  send_msg.total_score = total_score;
 
-  msgid = msgget (id, IPC_CREAT ) ;
-  if( msgid == -1 ) {
-    xil_printf ("PRODCON: Producer -- ERROR while opening Message Queue. Errno: %d\r\n", errno) ;
-    pthread_exit (&errno);
-  }
-  if( msgsnd (msgid, &send_msg, 32, 0) < 0 ) { 										// Blocking send
-    xil_printf ("PRODCON: Producer -- msgsnd of message(%d) ran into ERROR. Errno: %d. Halting..\r\n", errno);
-    pthread_exit(&errno);
-  }
-
-  XMutex_Lock(&Mutex, MUTEX_NUM);
-  print("PRODCON: Producer done !\r\n");
-  XMutex_Unlock(&Mutex, MUTEX_NUM);
+  XMbox_WriteBlocking(&Mbox, &send_msg, 24);
 }
 
 /* ------------------------------------------------------------------
@@ -126,22 +113,25 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
     newgold_id=ID;
     pthread_mutex_unlock (&mutex);
 
-  } else {
-    sleep(100);
+    sleep(1000);
+    sem_post(&sem);
   }
+  sleep(100);
+
 }
 
 //---------------------------------------
-static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {		//TODO: Reorganize data struct coming into MB0
-  XMbox_ReadBlocking(MboxInstancePtr, inbox_pointer, 16);
-  if (inbox_pointer->display_updated)
-	sem_post(&sem);																	// Increment the value of semaphore s by 1 (free up 1 semaphore count)
-}
+//static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {		//TODO: Reorganize data struct coming into MB0
+//  XMbox_ReadBlocking(MboxInstancePtr, inbox_pointer, 16);
+//  if (inbox_pointer->x)
+//	sem_post(&sem);																	// Increment the value of semaphore s by 1 (free up 1 semaphore count)
+//}
 
 void* thread_mb_controller () {
   while(1) {
     send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// Send mailbox to MB1
-    Mailbox_Receive(&Mbox, &ball);														// Read from mailbox
+//    Mailbox_Receive(&Mbox, &ball);														// Read from mailbox
+    sleep(40);
   }
 }
 
@@ -172,61 +162,61 @@ void* thread_ball () {
 
 void* thread_brick_col_1 () {
   while(1) {
-    compete_gold(0x000f, 1);  
+    compete_gold(0x000f, 1);
 	}
 }
 
 void* thread_brick_col_2 () {
   while(1) {
-    compete_gold(0x000f, 2);  
+    compete_gold(0x000f, 2);
 	}
 }
 
 void* thread_brick_col_3 () {
   while(1) {
-    compete_gold(0x000f, 3);  
+    compete_gold(0x000f, 3);
 	}
 }
 
 void* thread_brick_col_4 () {
   while(1) {
-    compete_gold(0x000f, 4);  
+    compete_gold(0x000f, 4);
 	}
 }
 
 void* thread_brick_col_5 () {
   while(1) {
-    compete_gold(0x000f, 5);  
+    compete_gold(0x000f, 5);
 	}
 }
 
 void* thread_brick_col_6 () {
   while(1) {
-    compete_gold(0x000f, 6);  
+    compete_gold(0x000f, 6);
 	}
 }
 
 void* thread_brick_col_7 () {
   while(1) {
-    compete_gold(0x000f, 7);  
+    compete_gold(0x000f, 7);
 	}
 }
 
 void* thread_brick_col_8 () {
   while(1) {
-    compete_gold(0x000f, 8);  
+    compete_gold(0x000f, 8);
 	}
 }
 
 void* thread_brick_col_9 () {
   while(1) {
-    compete_gold(0x000f, 9);  
+    compete_gold(0x000f, 9);
 	}
 }
 
 void* thread_brick_col_10 () {
   while(1) {
-    compete_gold(0x000f, 10);  
+    compete_gold(0x000f, 10);
 	}
 }
 
@@ -235,14 +225,14 @@ void* thread_scoreboard () {
   while(1) {
     // Increase ball speed by 25fps for every 10 points gained
     if ((ballspeed_x != MAX_BALL_SPEED) && (ballspeed_y != MAX_BALL_SPEED)) {
- //     ballspeed_x = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
- //     ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
+//      ballspeed_x = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
+//      ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
     }
   }
 }
 
-/** 
-  *  Main - Inititialization for Semaphore, HW+SW Mutex, Mailbox and Threads
+/**
+  *  Main - Inititialization for Semaphore, HW+SW Mutex, GPIOs, Mailbox and Threads
   */
 
 int main_prog(void) {   // This thread is statically created (as configured in the kernel configuration) and has priority 0 (This is the highest possible)
@@ -292,8 +282,8 @@ int main_prog(void) {   // This thread is statically created (as configured in t
 
   /** Initialize Threads
     * -----------------------------------------------------------------------------------
-    * thread_mb_controller  (highest priority)  : Mailbox Controller to pipe data to MB1  
-    * thread_ball                               : Ball                                    
+    * thread_mb_controller  (highest priority)  : Mailbox Controller to pipe data to MB1
+    * thread_ball                               : Ball
     * thread_brick_col_1 ~ thread_brick_col_10  : Brick Columns
     * thread_scoreboard     (lowest priority)   : Scoreboard
     * -----------------------------------------------------------------------------------
