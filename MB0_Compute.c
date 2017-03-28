@@ -73,12 +73,12 @@ pthread_mutex_t mutex, uart_mutex;
 // declare the semaphore
 sem_t sem;
 
+volatile int ball_dir = 0; 								// 0: up, 1: down
 volatile int new_ball_x = INIT_BALL_X; 
 volatile int new_ball_y = INIT_BALL_Y;
 volatile int total_score = 0;
 volatile int ballspeed_x = INIT_BALL_SPEED_X;
 volatile int ballspeed_y = INIT_BALL_SPEED_Y;
-
 volatile int oldgold_id = 0;
 volatile int newgold_id = 0;
 
@@ -149,18 +149,26 @@ void* thread_mb_controller () {
 
 void* thread_ball () {
   while(1) {
+
     // move the ball upwards && upper ceiling boundary check
-    if ((new_ball_y-ballspeed_y) >= 67) {
-      new_ball_y -= ballspeed_y;
-      // update every 1000ms
-      sleep(1200);
-    }
+  	if (!ball_dir){
+  		new_ball_y -= ballspeed_y;
+  	    if ((new_ball_y-ballspeed_y) == 207) {				// hit upper bound
+  	    	ball_dir = 1;									// flip ball direction
+  	    }
+  	  	// update every 1000ms
+    	sleep(1200);
+  	}
+
     // move the ball downwards && lower ceiling boundary check
-    if ((new_ball_y+ballspeed_y) <= 398) {
-      new_ball_y += ballspeed_y;
-      // update every 1000ms
-      sleep(1200);
-    }
+  	if (ball_dir){
+      	new_ball_y += ballspeed_y;
+  	    if ((new_ball_y+ballspeed_y) == 383) {				// hit lower bound
+  	    	ball_dir = 0;									// flip ball direction
+  	    }
+  	  	// update every 1000ms
+    	sleep(1200);
+  	}
   }
 }
 
