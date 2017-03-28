@@ -235,14 +235,14 @@ void* thread_scoreboard () {
   while(1) {
     // Increase ball speed by 25fps for every 10 points gained
     if ((ballspeed_x != MAX_BALL_SPEED) && (ballspeed_y != MAX_BALL_SPEED)) {
-      ballspeed_x = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
-      ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
+ //     ballspeed_x = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
+ //     ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
     }
   }
 }
 
 /** 
-  *  Main - Inititialization for Semaphore, HW+SW Mutex, GPIOs, Mailbox and Threads
+  *  Main - Inititialization for Semaphore, HW+SW Mutex, Mailbox and Threads
   */
 
 int main_prog(void) {   // This thread is statically created (as configured in the kernel configuration) and has priority 0 (This is the highest possible)
