@@ -57,7 +57,7 @@ XMutex Mutex;
 XGpio gpPB; 				//PB device instance.
 
 struct msg {
-  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, bar_x_pos, total_score;
+  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, total_score;
 };
 
 typedef struct {
@@ -67,7 +67,7 @@ typedef struct {
 
 pthread_attr_t attr;
 struct sched_param sched_par;
-pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, bar, scoreboard;
+pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, scoreboard;
 pthread_mutex_t mutex, uart_mutex;
 
 // declare the semaphore
@@ -75,10 +75,6 @@ sem_t sem;
 
 volatile int new_ball_x = INIT_BALL_X; 
 volatile int new_ball_y = INIT_BALL_Y;
-volatile int bar_x = DISPLAY_COLUMNS / 2;
-volatile int bar_y = DISPLAY_ROWS / 2;
-volatile int bar_region = 0;
-volatile int button_pressed = 0;
 volatile int total_score = 0;
 volatile int ballspeed_x = INIT_BALL_SPEED_X;
 volatile int ballspeed_y = INIT_BALL_SPEED_Y;
@@ -90,7 +86,7 @@ volatile int newgold_id = 0;
  * Function to send data struct over to MB1 via mailbox
  * ----------------------------------------------------
  */
-void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int bar_x_pos, int total_score) {
+void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int total_score) {
 
   struct msg send_msg;
   int msgid;
@@ -100,7 +96,6 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
   send_msg.new_gold_col = new_gold_col;
   send_msg.ball_x_pos = ball_x_pos;
   send_msg.ball_y_pos = ball_y_pos;
-  send_msg.bar_x_pos = bar_x_pos;
   send_msg.tscore = tscore;
 
   msgid = msgget (id, IPC_CREAT ) ;
@@ -145,14 +140,9 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {		
 	sem_post(&sem);																	// Increment the value of semaphore s by 1 (free up 1 semaphore count)
 }
 
-void shiftBar_xy(int shift_x, int shift_y) {
-  bar_x = (bar_x + shift_x + DISPLAY_COLUMNS) % DISPLAY_COLUMNS;
-  bar_y = (bar_y + shift_y + DISPLAY_ROWS) % DISPLAY_ROWS;
-}
-
 void* thread_mb_controller () {
   while(1) {
-    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, bar_x, total_score);		// Send mailbox to MB1
+    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// Send mailbox to MB1
     Mailbox_Receive(&Mbox, &ball);														// Read from mailbox
   }
 }
@@ -234,20 +224,6 @@ void* thread_brick_col_10 () {
 	}
 }
 
-void* thread_bar () {
-  while(1) {
-    switch (button_pressed) {
-      case 4:
-        shiftBar_xy(-4,0);
-      break;
-      case 8:
-        shiftBar_xy(4,0);
-      break;
-  }
-    // Update every 10ms;
-    sleep(120);
-  }
-}
 
 void* thread_scoreboard () {
   while(1) {
@@ -257,13 +233,6 @@ void* thread_scoreboard () {
       ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
     }
   }
-}
-
-static void gpPBIntHandler(void *arg) {
-  unsigned char val;
-  XGpio_InterruptClear(&gpPB,1);
-  button_pressed = XGpio_DiscreteRead(&gpPB, 1);
-  //  xil_printf("PB event, val = %d \r\n", val); // for testing.
 }
 
 /** 
