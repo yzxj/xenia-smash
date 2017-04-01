@@ -25,30 +25,30 @@
 #define DISPLAY_ROWS            480
 #define RECT_WIDTH 	            40
 #define RECT_LENGTH             240
-#define RECT_GAP 	              10
-#define X1 		 	                50
-#define X2 			                X1+RECT_WIDTH+RECT_GAP
-#define X3 			                X2+RECT_WIDTH+RECT_GAP
-#define X4 			                X3+RECT_WIDTH+RECT_GAP
-#define Y1 			                50
-#define INIT_BALL_X 		        288
-#define INIT_BALL_Y 		        397
+#define RECT_GAP				10
+#define X1						50
+#define X2						X1+RECT_WIDTH+RECT_GAP
+#define X3						X2+RECT_WIDTH+RECT_GAP
+#define X4						X3+RECT_WIDTH+RECT_GAP
+#define Y1						50
+#define INIT_BALL_X				288
+#define INIT_BALL_Y 			397
 #define INIT_BALL_SPEED_X       10
 #define INIT_BALL_SPEED_Y       10
 #define MAX_BALL_SPEED          40
 #define MIN_BALL_SPEED          2
-#define BALL_DIR 	              180
+#define BALL_DIR				180
 
 #define MSG_COLUMN	            1
-#define MSG_BALL	              2
+#define MSG_BALL				2
 
 /*	Mailbox Declaration	*/
-#define MY_CPU_ID 			        XPAR_CPU_ID
-#define MBOX_DEVICE_ID		      XPAR_MBOX_0_DEVICE_ID
+#define MY_CPU_ID				XPAR_CPU_ID
+#define MBOX_DEVICE_ID			XPAR_MBOX_0_DEVICE_ID
 static XMbox Mbox;			//Instance of the Mailbox driver
 
 /*	MUTEX ID PARAMETER for HW Mutex	*/
-#define MUTEX_DEVICE_ID 	      XPAR_MUTEX_0_IF_1_DEVICE_ID
+#define MUTEX_DEVICE_ID			XPAR_MUTEX_0_IF_1_DEVICE_ID
 #define MUTEX_NUM 			        0
 
 XMutex Mutex;
@@ -102,7 +102,7 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
  * Function to compete for counting semaphore, and attain gold status
  * ------------------------------------------------------------------
  */
- void compete_gold(int max, int ID) {
+ void compete_gold(int ID) {
   int randomizer = rand() % 3;
 
   if (randomizer == 1) {
@@ -120,17 +120,9 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
 
 }
 
-//---------------------------------------
-//static void Mailbox_Receive(XMbox *MboxInstancePtr, ball_msg *inbox_pointer) {		//TODO: Reorganize data struct coming into MB0
-//  XMbox_ReadBlocking(MboxInstancePtr, inbox_pointer, 16);
-//  if (inbox_pointer->x)
-//	sem_post(&sem);																	// Increment the value of semaphore s by 1 (free up 1 semaphore count)
-//}
-
 void* thread_mb_controller () {
   while(1) {
     send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// Send mailbox to MB1
-//    Mailbox_Receive(&Mbox, &ball);														// Read from mailbox
     sleep(40);
   }
 }
@@ -157,61 +149,61 @@ void* thread_ball () {
 
 void* thread_brick_col_1 () {
   while(1) {
-    compete_gold(0x000f, 0);
+    compete_gold(0);
 	}
 }
 
 void* thread_brick_col_2 () {
   while(1) {
-    compete_gold(0x000f, 1);
+    compete_gold(1);
 	}
 }
 
 void* thread_brick_col_3 () {
   while(1) {
-    compete_gold(0x000f, 2);
+    compete_gold(2);
 	}
 }
 
 void* thread_brick_col_4 () {
   while(1) {
-    compete_gold(0x000f, 3);
+    compete_gold(3);
 	}
 }
 
 void* thread_brick_col_5 () {
   while(1) {
-    compete_gold(0x000f, 4);
+    compete_gold(4);
 	}
 }
 
 void* thread_brick_col_6 () {
   while(1) {
-    compete_gold(0x000f, 5);
+    compete_gold(5);
 	}
 }
 
 void* thread_brick_col_7 () {
   while(1) {
-    compete_gold(0x000f, 6);
+    compete_gold(6);
 	}
 }
 
 void* thread_brick_col_8 () {
   while(1) {
-    compete_gold(0x000f, 7);
+    compete_gold(7);
 	}
 }
 
 void* thread_brick_col_9 () {
   while(1) {
-    compete_gold(0x000f, 8);
+    compete_gold(8);
 	}
 }
 
 void* thread_brick_col_10 () {
   while(1) {
-    compete_gold(0x000f, 9);
+    compete_gold(9);
 	}
 }
 
