@@ -57,6 +57,10 @@ struct msg {
   int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, total_score;
 };
 
+struct msg_game_status {
+	int status;
+};
+
 typedef struct {
   int dir,x,y;
   uint32_t col;
@@ -83,6 +87,10 @@ volatile int tenpt_counter = 0;
 volatile bool change_golden_status = 1;					// initialize the first 2 golden columns
 volatile int twocol_counter = 2;						// track the number of golden columns we are changing
 
+volatile int game_status = -1;							// [-1: In-progress], [0: Lose], [1: Win]
+volatile int columns_destroyed = 0;						// tracks the number of columns the user has destroyed
+volatile bool ball_beyond_y = 0;						// flag to check if ball has gone beyond lower screen limit of y (ie. lose)
+
 
 /* ----------------------------------------------------------
  * Function that checks if player has incremented score by 10
@@ -99,14 +107,12 @@ void check_tenpt(void) {
 }
 
 /* ----------------------------------------------------
- * Function to send data struct over to MB1 via mailbox
+ * Functions to send data structs over to MB1 via mailbox
  * ----------------------------------------------------
  */
 void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int total_score) {
 
   struct msg send_msg;
-  int msgid;
-
   send_msg.id = id;
   send_msg.old_gold_col = old_gold_col;
   send_msg.new_gold_col = new_gold_col;
@@ -115,6 +121,14 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
   send_msg.total_score = total_score;
 
   XMbox_WriteBlocking(&Mbox, &send_msg, 24);
+}
+
+void send_game_status(int status) {
+
+  struct msg_game_status send_msg;
+  send_msg.status = status;
+
+  XMbox_WriteBlocking(&Mbox, &send_msg, 4);
 }
 
 /* ------------------------------------------------------------------
@@ -146,7 +160,16 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
 
 void* thread_mb_controller () {
   while(1) {
-    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// Send mailbox to MB1
+    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// send mailbox to MB0
+    
+    if(columns_destroyed == 10) {												// check if all 10 brick columns are destroyed
+    	game_status = 1;													
+    	send_game_status(game_status);											// send mailbox to MB0 to update winning UI
+    }
+    if (ball_beyond_y) {
+    	game_status = 0;
+    	send_game_status(game_status);
+    }
     sleep(40);
   }
 }
@@ -167,77 +190,142 @@ void* thread_ball () {
   	    	ball_dir = 0;									// flip ball direction
   	    }
   	}
+
+  	if(new_ball_y >= 413) {									// check if ball's y-pos is below the set limit
+  		ball_beyond_y = 1;
+  		pthread_exit(0);									// no longer update the ball positioning
+  	}
 	sleep(40);
   }
 }
 
 void* thread_brick_col_1 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(0);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(0);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}					
 	}
 }
 
 void* thread_brick_col_2 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(1);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(1);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_3 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(2);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(2);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_4 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(3);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(3);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_5 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(4);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(4);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_6 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(5);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(5);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_7 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(6);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(6);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_8 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(7);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(7);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_9 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(8);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(8);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
 void* thread_brick_col_10 () {
-  while(1) {
-  	if(change_golden_status)
-    	compete_gold(9);
+	int brick_counter = 8;
+  	while(1) {
+  		if(change_golden_status)
+    		compete_gold(9);
+
+    	if(brick_counter == 0) {
+    		columns_destroyed++;
+    		pthread_exit(0);
+    	}	
 	}
 }
 
