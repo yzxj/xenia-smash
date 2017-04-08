@@ -73,11 +73,30 @@ sem_t sem;
 volatile int ball_dir = 0; 								// 0: up, 1: down
 volatile int new_ball_x = INIT_BALL_X;
 volatile int new_ball_y = INIT_BALL_Y;
-volatile int total_score = 0;
 volatile int ballspeed_x = INIT_BALL_SPEED_X;
 volatile int ballspeed_y = INIT_BALL_SPEED_Y;
 volatile int oldgold_id = 0;
 volatile int newgold_id = 0;
+
+volatile int total_score = 0;
+volatile int tenpt_counter = 0;
+volatile bool change_golden_status = 1;					// initialize the first 2 golden columns
+volatile int twocol_counter = 2;						// track the number of golden columns we are changing
+
+
+/* ----------------------------------------------------------
+ * Function that checks if player has incremented score by 10
+ * ----------------------------------------------------------
+ */
+void check_tenpt(void) {
+	if (tenpt_counter >= 10) {
+		tenpt_counter -= 10;							//	remove 10 from the score
+		change_golden_status = 1;						//	set golden flag to allow brick threads to compete for turning gold
+		// TODO: include increase speed function (25px/sec)
+	}
+	else
+		return;
+}
 
 /* ----------------------------------------------------
  * Function to send data struct over to MB1 via mailbox
@@ -105,8 +124,8 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
  void compete_gold(int ID) {
   int randomizer = rand() % 3;
 
-  if (randomizer == 1) {
-    sem_wait(&sem);																	// Decrement the value of semaphore s by 1 (use up 1 sema resource)
+  if ((randomizer == 1) && (twocol_counter > 0)) {	
+    sem_wait(&sem);																// Decrement the value of semaphore s by 1 (use up 1 sema resource)
 
     pthread_mutex_lock (&mutex);
     oldgold_id=newgold_id;
@@ -115,9 +134,14 @@ void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y
 
     sleep(1000);
     sem_post(&sem);
+    twocol_counter--;
+  }
+
+  if (twocol_counter == 0) {													// we have changed two new columns to golden
+  	change_golden_status = 0;													// we no longer need and allow brick threads to compete for gold status
+  	twocol_counter = 2;															// reset twocol_counter for next iteration
   }
   sleep(100);
-
 }
 
 void* thread_mb_controller () {
@@ -149,61 +173,71 @@ void* thread_ball () {
 
 void* thread_brick_col_1 () {
   while(1) {
-    compete_gold(0);
+  	if(change_golden_status)
+    	compete_gold(0);
 	}
 }
 
 void* thread_brick_col_2 () {
   while(1) {
-    compete_gold(1);
+  	if(change_golden_status)
+    	compete_gold(1);
 	}
 }
 
 void* thread_brick_col_3 () {
   while(1) {
-    compete_gold(2);
+  	if(change_golden_status)
+    	compete_gold(2);
 	}
 }
 
 void* thread_brick_col_4 () {
   while(1) {
-    compete_gold(3);
+  	if(change_golden_status)
+    	compete_gold(3);
 	}
 }
 
 void* thread_brick_col_5 () {
   while(1) {
-    compete_gold(4);
+  	if(change_golden_status)
+    	compete_gold(4);
 	}
 }
 
 void* thread_brick_col_6 () {
   while(1) {
-    compete_gold(5);
+  	if(change_golden_status)
+    	compete_gold(5);
 	}
 }
 
 void* thread_brick_col_7 () {
   while(1) {
-    compete_gold(6);
+  	if(change_golden_status)
+    	compete_gold(6);
 	}
 }
 
 void* thread_brick_col_8 () {
   while(1) {
-    compete_gold(7);
+  	if(change_golden_status)
+    	compete_gold(7);
 	}
 }
 
 void* thread_brick_col_9 () {
   while(1) {
-    compete_gold(8);
+  	if(change_golden_status)
+    	compete_gold(8);
 	}
 }
 
 void* thread_brick_col_10 () {
   while(1) {
-    compete_gold(9);
+  	if(change_golden_status)
+    	compete_gold(9);
 	}
 }
 
