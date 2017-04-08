@@ -24,6 +24,7 @@
 #define DISPLAY_COLUMNS         640
 #define DISPLAY_ROWS            480
 #define RECT_WIDTH 	            40
+#define RECT_HEIGHT				15 
 #define RECT_LENGTH             240
 #define RECT_GAP				10
 #define X1						50
@@ -38,6 +39,7 @@
 #define MAX_BALL_SPEED          40
 #define MIN_BALL_SPEED          2
 #define BALL_DIR				180
+#define BALL_RADIUS				7
 
 #define MSG_COLUMN	            1
 #define MSG_BALL				2
@@ -59,6 +61,10 @@ struct msg {
 
 struct msg_game_status {
 	int status;
+};
+
+struct collision_msg {
+	int brick_col, brick_row;
 };
 
 typedef struct {
@@ -91,6 +97,31 @@ volatile int game_status = -1;							// [-1: In-progress], [0: Lose], [1: Win]
 volatile int columns_destroyed = 0;						// tracks the number of columns the user has destroyed
 volatile bool ball_beyond_y = 0;						// flag to check if ball has gone beyond lower screen limit of y (ie. lose)
 
+
+/*  -----------------------------------------
+ *	Function that checks for brick collisions
+ *	-----------------------------------------
+ */
+int check_collision(int col_num) {
+
+	int circle_distance_x, circle_distance_y;
+
+	while (i<8) {
+		circle_distance_x = abs(new_ball_x - (65+(45*(col_num-1));
+		circle_distance_y = abs(new_ball_y - (65+(20*i)));											// loop down y-axis of the bricks
+
+		if (circle_distance_x <= (RECT_WIDTH/2)) {return i;}
+			else 
+				if (circle_distance_y <= (RECT_HEIGHT/2)) {return i;}
+					else {
+						cornerDistance_sq = (circle_distance_x - RECT_WIDTH/2)^2 + (circle_distance_y - RECT_HEIGHT/2)^2;
+						if (cornerDistance_sq <= (BALL_RADIUS*BALL_RADIUS)) {return -i;}			// return negative of row # indicating a corner strike
+							else
+								i++;    				
+					}
+	}
+	return 0;	
+}
 
 /* ----------------------------------------------------------
  * Function that checks if player has incremented score by 10
@@ -175,8 +206,9 @@ void* thread_mb_controller () {
 }
 
 void* thread_ball () {
-  while(1) {
-
+	int i = 0;
+ 	struct collision_msg receive_msg
+ 	while(1) {
     if (!ball_dir){
     	// move the ball upwards && upper ceiling boundary check
     	new_ball_y -= ballspeed_y;
@@ -189,18 +221,26 @@ void* thread_ball () {
   	    if (new_ball_y+ballspeed_y >= 398) {				// hit lower bound
   	    	ball_dir = 0;									// flip ball direction
   	    }
-  	}
 
   	if(new_ball_y >= 413) {									// check if ball's y-pos is below the set limit
   		ball_beyond_y = 1;
   		pthread_exit(0);									// no longer update the ball positioning
   	}
+
+  	for (i=0;i<10; i++) {
+  		msgid = msgget (i, IPC_CREAT);
+  		msgrcv( msgid, &receive_msg, 8, 0,0);				// [receive_msg.brick_col: the brick column], [receive_msg.brick_row: the brick row (-ve means corner strike on that brick)]
+ 		//TODO: ball deflection based on receive_msg
+  	}
+
 	sleep(40);
   }
 }
 
 void* thread_brick_col_1 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 1;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(0);
@@ -208,12 +248,31 @@ void* thread_brick_col_1 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
-    	}					
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 1
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
+    	}
 	}
 }
 
 void* thread_brick_col_2 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 2;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(1);
@@ -221,12 +280,31 @@ void* thread_brick_col_2 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 2
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_3 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 3;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(2);
@@ -234,12 +312,31 @@ void* thread_brick_col_3 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
-    	}	
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 3
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
+    	}
 	}
 }
 
 void* thread_brick_col_4 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 4;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(3);
@@ -247,12 +344,31 @@ void* thread_brick_col_4 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 4
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_5 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 5;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(4);
@@ -260,12 +376,31 @@ void* thread_brick_col_5 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 5
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_6 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 6;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(5);
@@ -273,12 +408,31 @@ void* thread_brick_col_6 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 6
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_7 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 7;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(6);
@@ -286,12 +440,31 @@ void* thread_brick_col_7 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 7
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_8 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 8;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(7);
@@ -299,12 +472,31 @@ void* thread_brick_col_8 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 8
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_9 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 9;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(8);
@@ -312,12 +504,31 @@ void* thread_brick_col_9 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 9
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
 
 void* thread_brick_col_10 () {
 	int brick_counter = 8;
+	int collision_row = 0;
+	int id = 10;
   	while(1) {
   		if(change_golden_status)
     		compete_gold(9);
@@ -325,6 +536,23 @@ void* thread_brick_col_10 () {
     	if(brick_counter == 0) {
     		columns_destroyed++;
     		pthread_exit(0);
+    	}
+
+    	collision_row = check_collision(id);					// check collision for col number 10
+
+    	if(collision_row != 0) {								// [+ve: surface strike], [-ve: corner strike]
+    		struct collision_msg send_collision_msg;
+    		int msgid;
+    		send_collision_msg.brick_col = id;
+    		send_collision_msg.brick_row = collision_row;
+        	msgid = msgget(id, IPC_CREAT ) ;
+        	msgsnd(msgid, &send_collision_msg, 8, 0);
+        	XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
+        	if (newgold_id == id) || (oldgold_id == id)
+        		total_score +=2;
+        	else
+        		total_score +=1;
+    		brick_counter--;									// reduce number of bricks "alive" in this column
     	}	
 	}
 }
@@ -376,7 +604,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   print("-- Entering main_prog() uB0 RECEIVER--\r\n");
 
   // Configure and init mailbox
-  ConfigPtr = XMbox_LookupConfig(MBOX_DEVICE_ID );
+  ConfigPtr = XMbox_LookupConfig(MBOX_DEVICE_ID);
   if (ConfigPtr == (XMbox_Config *)NULL) {
     print("-- Error configuring Mbox uB0 receiver--\r\n");
     return XST_FAILURE;
