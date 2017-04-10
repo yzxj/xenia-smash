@@ -102,32 +102,41 @@ volatile int game_status = -1;							// [-1: In-progress], [0: Lose], [1: Win]
 volatile int columns_destroyed = 0;						// tracks the number of columns the user has destroyed
 volatile int ball_beyond_y = 0;						// flag to check if ball has gone beyond lower screen limit of y (ie. lose)
 
+volatile int dead_or_alive[10][8];
 
 /*  -----------------------------------------
-*	Function that checks for brick collisions
-*	-----------------------------------------
-*/
+ *  Function that checks for brick collisions
+ *  -----------------------------------------
+ */
 int check_collision(int col_num) {
 
-  int circle_distance_x, circle_distance_y, corner_distance_sq;
-  int i=0;
+  int circle_distance_x, circle_distance_y;
 
   while (i<8) {
-    circle_distance_x = abs(new_ball_x - (65+(45*(col_num-1))));
-    circle_distance_y = abs(new_ball_y - (65+(20*i)));											// loop down y-axis of the bricks
+    if(dead_or_alive[col_num][i]){                  // only check collision if the specific brick is alive
+      circle_distance_x = abs(new_ball_x - (65+(45*(col_num-1));
+      circle_distance_y = abs(new_ball_y - (65+(20*i)));                      // loop down y-axis of the bricks
 
-    if (circle_distance_x <= (RECT_WIDTH/2)) {
-    	return i;
-    } else if (circle_distance_y <= (RECT_HEIGHT/2)) {
-    	return i;
-    } else {
-      corner_distance_sq = pow((circle_distance_x - RECT_WIDTH/2),2) + pow((circle_distance_y - RECT_HEIGHT/2),2);
-      if (corner_distance_sq <= (BALL_RADIUS*BALL_RADIUS)) {return -i;}			// return negative of row # indicating a corner strike
-      else
-      i++;
+      if (circle_distance_x <= (RECT_WIDTH/2)) {
+        dead_or_alive[col_num-1][i] = 0;
+        return i;
+      }
+        else 
+          if (circle_distance_y <= (RECT_HEIGHT/2)) {
+            dead_or_alive[col_num-1][i] = 0;
+            return i;}
+            else {
+              cornerDistance_sq = (circle_distance_x - RECT_WIDTH/2)^2 + (circle_distance_y - RECT_HEIGHT/2)^2;
+              if (cornerDistance_sq <= (BALL_RADIUS*BALL_RADIUS)) {
+                dead_or_alive[col_num-1][i] = 0;
+                return -i;                            // return negative of row # indicating a corner strike
+                }          
+            }     
     }
+    i++;
+
   }
-  return 0;
+  return 0; 
 }
 
 /* ----------------------------------------------------------
@@ -832,13 +841,18 @@ int main_prog(void) {   // This thread is statically created (as configured in t
 }
 
 int main (void) {
-  print("-- Entering main() uB0 RECEIVER--\r\n");
-  xilkernel_init();
-  xmk_add_static_thread(main_prog,0);
-  xilkernel_start();
-  //Start Xilkernel
-  xilkernel_main ();
+    int i, j;
+    print("-- Entering main() uB0 RECEIVER--\r\n");
+    xilkernel_init();
+    xmk_add_static_thread(main_prog,0);
+    xilkernel_start();
+    //Start Xilkernel
+    xilkernel_main ();
 
-  //Control does not reach here
-  return 0;
+    for(i=0; i<10; i++)               // initialize health map of the bricks
+      for(j<0; j<8; j++)
+        dead_or_alive[i][j] = 1;
+
+    //Control does not reach here
+    return 0;
 }
