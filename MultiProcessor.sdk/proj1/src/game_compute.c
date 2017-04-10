@@ -37,7 +37,10 @@
 #define INIT_BALL_SPEED_Y       10
 #define MAX_BALL_SPEED          40
 #define MIN_BALL_SPEED          2
-#define BALL_DIR 	              180
+#define BALL_INIT_DIR 	        0
+#define BALL_INIT_SPEED         250
+#define BALL_MIN_SPEED			50
+#define BALL_MAX_SPEED			1000
 
 #define MSG_COLUMN	            1
 #define MSG_BALL	              2
@@ -70,7 +73,8 @@ pthread_mutex_t mutex, uart_mutex;
 // declare the semaphore
 sem_t sem;
 
-volatile int ball_dir = 0; 								// 0: up, 1: down
+volatile int ball_dir = 0; 								// 0: up, 180: down
+volatile int ballspeed = 50;
 volatile int new_ball_x = INIT_BALL_X;
 volatile int new_ball_y = INIT_BALL_Y;
 volatile int total_score = 0;
@@ -137,20 +141,55 @@ void* thread_mb_controller () {
 
 void* thread_ball () {
   while(1) {
+	int hit_angle_plus=0;
+	int hit_angle_minus=0;
+	int hit_speed_plus=0;
+	int hit_speed_minus=0;
+	int hit_zone_bottom=0;
+	int hit_zone_top=0;
+	int hit_zone_leftright=0;
+	int hit_brick_topbottom=0;
+	int hit_brick_leftright=0;
+	int hit_brick_corner=0;
 
-    if (!ball_dir){
-    	// move the ball upwards && upper ceiling boundary check
-    	new_ball_y -= ballspeed_y;
-  	    if (new_ball_y-ballspeed_y <= 227) {				// hit upper bound
-  	    	ball_dir = 1;									// flip ball direction
-  	    }
-  	} else {
-    	// move the ball downwards && lower ceiling boundary check
-    	new_ball_y += ballspeed_y;
-  	    if (new_ball_y+ballspeed_y >= 398) {				// hit lower bound
-  	    	ball_dir = 0;									// flip ball direction
-  	    }
-  	}
+	if (hit_angle_plus) {
+		// increase by 15deg up to 75 (0 is up, 75 is 165 with respect to bar)
+	}
+	if (hit_angle_minus) {
+		// decrease by 15deg up down to 285
+	}
+	if (hit_speed_plus) {
+		ballspeed = (ballspeed > BALL_MAX_SPEED-100) ? BALL_MAX_SPEED : ballspeed + 100;
+		// TODO: update ball angle
+	}
+	if (hit_speed_minus) {
+		ballspeed = (ballspeed < BALL_MIN_SPEED+100) ? BALL_MIN_SPEED : ballspeed - 100;
+	}
+
+	// TODO: Update ballspeed_x/y according to speed/angle?
+	// TODO: How to read where it hit brick?
+
+	if (hit_zone_top || hit_brick_topbottom) {
+		ballspeed_y = -ballspeed_y;
+	}
+	if (hit_zone_leftright || hit_brick_leftright) {
+		ballspeed_x = -ballspeed_x;
+	}
+
+	if (hit_brick_corner) {
+		int temp = ballspeed_x;
+		ballspeed_x = ballspeed_y;
+		ballspeed_y = temp;
+	}
+
+	// Lose condition
+	if (hit_zone_bottom) {
+		// TODO: Lose game
+		pthread_exit(0);
+	}
+
+	new_ball_x += ballspeed_x;
+	new_ball_y += ballspeed_y;
 	sleep(40);
   }
 }
