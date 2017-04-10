@@ -184,6 +184,8 @@ void compete_gold(int ID) {
     newgold_id=ID;
     pthread_mutex_unlock (&mutex);
 
+    // FIXME: What's the point of this semaphore then?
+    // Also, sleeping in compete gold means the whole brick thread will sleep.
     sleep(1000);
     sem_post(&sem);
     twocol_counter--;
@@ -200,6 +202,8 @@ void* thread_mb_controller () {
   while(1) {
     send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// send mailbox to MB0
 
+    // FIXME: Is there a need to send game status separately from the above send?
+    // We also need to send bricks destroyed
     if(columns_destroyed == 10) {												// check if all 10 brick columns are destroyed
       game_status = 1;
       send_game_status(game_status);											// send mailbox to MB0 to update winning UI
@@ -283,6 +287,8 @@ void* thread_ball () {
 }
 
 void* thread_brick_col_1 () {
+  // FIXME: If the contents of these functions are mostly similar, you ought to pull them out to a function.
+  // Now to fix your errors you need to modify them everywhere
   int brick_counter = 8;
   int collision_row = 0;
   int id = 1;
@@ -304,6 +310,8 @@ void* thread_brick_col_1 () {
       send_collision_msg.brick_row = collision_row;
       msgid = msgget(id, IPC_CREAT ) ;
       msgsnd(msgid, &send_collision_msg, 8, 0);
+      // FIXME: I don't think writeBlocking is a good idea.
+      // There'll be a deadlock because control does not hand over to thread_ball
       XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
       if (newgold_id == id) || (oldgold_id == id)
       total_score +=2;
