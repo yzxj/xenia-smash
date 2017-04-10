@@ -83,7 +83,7 @@ struct msg {
 };
 
 struct collision_msg {
-  int brick_col, brick_row;
+  int type;
 };
 
 typedef struct {
@@ -119,6 +119,10 @@ volatile int columns_destroyed = 0;						// tracks the number of columns the use
 volatile int ball_beyond_y = 0;						// flag to check if ball has gone beyond lower screen limit of y (ie. lose)
 
 volatile int brick_destroyed[10][8];
+
+volatile int destroyed_col[8];
+volatile int destroyed_row[8];
+volatile int destroyed_index = 0;
 
 /* ----------------------------------------------------------
 * Function that checks if player has incremented score by 10
@@ -296,36 +300,44 @@ int collided(int col, int row, int *collision_type) {
 	return 0;
 }
 
-//int update_bricks(int col, int row){
-//  struct collision_msg send_collision_msg;
-//  int msgid;
-//  send_collision_msg.brick_col = id;
-//  send_collision_msg.brick_row = collision_row;
-//  msgid = msgget(id, IPC_CREAT ) ;
-//  msgsnd(msgid, &send_collision_msg, 8, 0);
-//  XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
-//  if ((newgold_id == id) || (oldgold_id == id))
-//  total_score +=2;
-//  else
-//  total_score +=1;
-//  brick_counter--;									// reduce number of bricks "alive" in this column
-//}
+void inform_ball_thread(int *collision_type) {
+    struct collision_msg send_collision_msg;
+    int msgid;
+    send_collision_msg.type = *collision_type;
+    msgsnd(msgid, &send_collision_msg, 4, 0);
+}
+
+void update_score(int col) {
+  if((newgold_id == col) || (oldgold_id == col)) {
+    total_score +=2;
+  } else {
+    total_score +=1;
+  }
+}
+
+void save_destroyed_brick(int row, col, index) {
+    pthread_mutex_lock (&mutex);
+    destroyed_col[index] = col;
+    destroyed_row[index] = row;
+    pthread_mutex_unlock (&mutex);
+}
 
 void check_collisions_send_updates(int col, int *bricks_left) {
 	// for each brick
 	// if not destroyed
 	// check for collision
 	// if so: update destroyed bricks, score, and send collision data
-  int row, collision_type;
+  int row, collision_type; 
+  int index = 0;
   for(row=0; row<8; row++) {
 	  // only check collision if the specific brick is alive
 	  if(!brick_destroyed[col][row] && collided(col, row, &collision_type)){
 		  brick_destroyed[col][row] = 1;
 		  *bricks_left = *bricks_left - 1;
-		  // FIXME: Complete these functions:
 		  inform_ball_thread(collision_type);
-		  update_score(newgold_id==col || oldgold_id==col);
-		  inform_thread_mb_controller(col,row);
+		  update_score(col);
+      save_destroyed_brick(row, col, index);
+      index++;
     }
   }
 }
