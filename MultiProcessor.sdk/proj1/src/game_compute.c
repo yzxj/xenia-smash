@@ -310,8 +310,6 @@ void* thread_brick_col_1 () {
       send_collision_msg.brick_row = collision_row;
       msgid = msgget(id, IPC_CREAT ) ;
       msgsnd(msgid, &send_collision_msg, 8, 0);
-      // FIXME: I don't think writeBlocking is a good idea.
-      // There'll be a deadlock because control does not hand over to thread_ball
       XMbox_WriteBlocking(&Mbox, &send_collision_msg, 8);	// mailbox to remove the display bricks
       if (newgold_id == id) || (oldgold_id == id)
       total_score +=2;
