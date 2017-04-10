@@ -275,9 +275,8 @@ void* thread_ball () {
   }
 }
 
-// Returns 1 if collided
-// Saves collision type:
-// 0: nothing. 1: top/bottom. 2: left/right. 3-6: corners, clockwise from top right
+// Returns 1 if collided, 0 if not
+// Saves collision type: 0: nothing. 1: top/bottom. 2: left/right. 3-6: corners, clockwise from top right
 int collided(int col, int row, int *collision_type) {
 	double circle_distance_x, circle_distance_y, corner_distance_sq;
 	double rect_x = 65 + col*(BRICK_GAP+BRICK_WIDTH)  + BRICK_WIDTH/2.0;
@@ -362,9 +361,9 @@ void check_collisions_send_updates(int col, int *bricks_left) {
 
 void exit_brickthread_if_zero(int bricks_left) {
     if(bricks_left == 0) {
-	  sem_wait(&sem);
+	  sem_wait(&sem_bricks);
 	  columns_destroyed++;
-	  sem_post(&sem);
+	  sem_post(&sem_bricks);
 	  pthread_exit(0);
 	}
 }
