@@ -59,9 +59,6 @@
 #define BALL_MAX_SPEED			1000
 #define BALL_RADIUS				7
 
-#define MSG_COLUMN	            1
-#define MSG_BALL				2
-
 /*	Mailbox Declaration	*/
 #define MY_CPU_ID				XPAR_CPU_ID
 #define MBOX_DEVICE_ID			XPAR_MBOX_0_DEVICE_ID
@@ -73,12 +70,16 @@ static XMbox Mbox;			//Instance of the Mailbox driver
 
 XMutex Mutex;
 
+#define MSG_MAX_DESTROYED		8
+#define MSG_SIZE				7*4 + MSG_MAX_DESTROYED*2*4
 struct msg {
-  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, total_score;
-};
-
-struct msg_game_status {
-  int status;
+  int old_gold_col, new_gold_col;
+  int ball_x_pos, ball_y_pos;
+  int game_won;
+  int total_score;
+  int destroyed_num;
+  int destroyed_x[MSG_MAX_DESTROYED];
+  int destroyed_y[MSG_MAX_DESTROYED];
 };
 
 struct collision_msg {
@@ -96,7 +97,7 @@ pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, co
 pthread_mutex_t mutex, uart_mutex;
 
 // declare the semaphore
-sem_t sem;
+sem_t sem_gold;
 sem_t sem_bricks;
 
 volatile int ball_dir = 0; 								// 0: up, 180: down
@@ -113,7 +114,7 @@ volatile int tenpt_counter = 0;
 volatile int change_golden_status = 1;					// initialize the first 2 golden columns
 volatile int twocol_counter = 2;						// track the number of golden columns we are changing
 
-volatile int game_status = -1;							// [-1: In-progress], [0: Lose], [1: Win]
+volatile int game_status = 0;							// [0: In-progress], [-1: Lose], [1: Win]
 volatile int columns_destroyed = 0;						// tracks the number of columns the user has destroyed
 volatile int ball_beyond_y = 0;						// flag to check if ball has gone beyond lower screen limit of y (ie. lose)
 
@@ -137,25 +138,15 @@ void check_tenpt(void) {
 * Functions to send data structs over to MB1 via mailbox
 * ----------------------------------------------------
 */
-void send(int id, int old_gold_col, int new_gold_col, int ball_x_pos, int ball_y_pos, int total_score) {
-
+void send_data_to_mb0() {
   struct msg send_msg;
-  send_msg.id = id;
-  send_msg.old_gold_col = old_gold_col;
-  send_msg.new_gold_col = new_gold_col;
-  send_msg.ball_x_pos = ball_x_pos;
-  send_msg.ball_y_pos = ball_y_pos;
+  send_msg.old_gold_col = oldgold_id;
+  send_msg.new_gold_col = newgold_id;
+  send_msg.ball_x_pos = new_ball_x;
+  send_msg.ball_y_pos = new_ball_y;
   send_msg.total_score = total_score;
 
   XMbox_WriteBlocking(&Mbox, &send_msg, 24);
-}
-
-void send_game_status(int status) {
-
-  struct msg_game_status send_msg;
-  send_msg.status = status;
-
-  XMbox_WriteBlocking(&Mbox, &send_msg, 4);
 }
 
 /* ------------------------------------------------------------------
@@ -164,43 +155,22 @@ void send_game_status(int status) {
 */
 void compete_gold(int ID) {
   int randomizer = rand() % 3;
-
-  if ((randomizer == 1) && (twocol_counter > 0)) {
-    sem_wait(&sem);																// Decrement the value of semaphore s by 1 (use up 1 sema resource)
-
-    pthread_mutex_lock (&mutex);
+  if (randomizer == 1 && sem_trywait(&sem_gold) == 0) {
+    pthread_mutex_lock(&mutex);
     oldgold_id=newgold_id;
     newgold_id=ID;
-    pthread_mutex_unlock (&mutex);
-
-    // FIXME: What's the point of this semaphore then?
-    // Also, sleeping in compete gold means the whole brick thread will sleep.
-    sleep(1000);
-    sem_post(&sem);
-    twocol_counter--;
+    pthread_mutex_unlock(&mutex);
   }
-
-  if (twocol_counter == 0) {													// we have changed two new columns to golden
-    change_golden_status = 0;													// we no longer need and allow brick threads to compete for gold status
-    twocol_counter = 2;															// reset twocol_counter for next iteration
-  }
-  sleep(100);
 }
 
 void* thread_mb_controller () {
   while(1) {
-    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// send mailbox to MB0
+	game_status = (columns_destroyed == 10);
+	send_data_to_mb0();
 
-    // FIXME: Is there a need to send game status separately from the above send?
-    // We also need to send bricks destroyed
-    if(columns_destroyed == 10) {												// check if all 10 brick columns are destroyed
-      game_status = 1;
-      send_game_status(game_status);											// send mailbox to MB0 to update winning UI
-    }
-    if (ball_beyond_y) {
-      game_status = 0;
-      send_game_status(game_status);
-    }
+	if (game_status) {
+		pthread_exit(0);
+	}
     sleep(40);
   }
 }
@@ -210,16 +180,16 @@ void* thread_ball () {
   int msgid;
   struct collision_msg receive_msg;
   while(1) {
-    int hit_angle_plus=0;
-    int hit_angle_minus=0;
-    int hit_speed_plus=0;
-    int hit_speed_minus=0;
-    int hit_zone_bottom=0;
-    int hit_zone_top=0;
-    int hit_zone_leftright=0;
-    int hit_brick_topbottom=0;
-    int hit_brick_leftright=0;
-    int hit_brick_corner=0;
+    int hit_angle_plus	=0;
+    int hit_angle_minus	=0;
+    int hit_speed_plus	=0;
+    int hit_speed_minus	=0;
+    int hit_zone_bottom	=0;
+    int hit_zone_top	=0;
+    int hit_zone_leftright	=0;
+    int hit_brick_topbottom	=0;
+    int hit_brick_leftright	=0;
+    int hit_brick_corner	=0;
 
     if (hit_angle_plus) {
       // increase by 15deg up to 75 (0 is up, 75 is 165 with respect to bar)
@@ -245,6 +215,7 @@ void* thread_ball () {
       ballspeed_x = -ballspeed_x;
     }
 
+    // Brick-related should be separate. Need MQ loop
     if (hit_brick_corner) {
       int temp = ballspeed_x;
       ballspeed_x = ballspeed_y;
@@ -369,9 +340,7 @@ void exit_brickthread_if_zero(int bricks_left) {
 }
 
 void brick_thread_logic(int col, int *bricks_left) {
-	if(change_golden_status) {
-		compete_gold(col);
-	}
+	compete_gold(col);
 	check_collisions_send_updates(col, bricks_left);
 	exit_brickthread_if_zero(*bricks_left);
 }
@@ -381,6 +350,7 @@ void* thread_brick_col_1 () {
   while(1) {
 	  // NOTE: 0-based indexing.
 	  brick_thread_logic(0, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -388,6 +358,7 @@ void* thread_brick_col_2 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(1, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -395,6 +366,7 @@ void* thread_brick_col_3 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(2, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -402,6 +374,7 @@ void* thread_brick_col_4 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(3, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -409,6 +382,7 @@ void* thread_brick_col_5 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(4, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -416,6 +390,7 @@ void* thread_brick_col_6 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(5, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -423,6 +398,7 @@ void* thread_brick_col_7 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(6, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -430,6 +406,7 @@ void* thread_brick_col_8 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(7, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -437,6 +414,7 @@ void* thread_brick_col_9 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(8, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -444,6 +422,7 @@ void* thread_brick_col_10 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(9, &bricks_left);
+	  sleep(40);
   }
 }
 
@@ -470,13 +449,13 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   XMbox_Config *ConfigPtr;
 
   // Initialize semaphore for resource competion
-  if( sem_init(&sem, 1, 2) < 0 ) {
-    print("Error while initializing semaphore sem.\r\n");
+  if( sem_init(&sem_gold, 1, 2) < 0 ) {
+    print("Error while initializing semaphore sem_gold.\r\n");
   }
 
   // Initialize semaphore for resource competion
   if( sem_init(&sem_bricks, 1, 1) < 0 ) {
-    print("Error while initializing semaphore sem.\r\n");
+    print("Error while initializing semaphore sem_bricks.\r\n");
   }
 
   // Init SW Mutex
