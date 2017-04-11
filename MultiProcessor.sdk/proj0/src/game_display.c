@@ -123,7 +123,7 @@
 
 /**************************** Type Definitions ******************************/
 #define MSG_MAX_DESTROYED		8
-#define MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
+#define STATE_MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
 typedef struct {
   int old_gold_col, new_gold_col;
   int ball_x_pos, ball_y_pos;
@@ -134,6 +134,7 @@ typedef struct {
   int destroyed_y[MSG_MAX_DESTROYED];
 } state_msg;
 
+#define BAR_MSG_BYTES			8
 typedef struct {
   int bar1_x, bar2_x;
 } bar_msg;
@@ -152,7 +153,9 @@ void* main_prog(void *arg);
 /*	Mailbox Declaration	*/
 #define MY_CPU_ID 			  XPAR_CPU_ID
 #define MBOX_DEVICE_ID		  XPAR_MBOX_0_DEVICE_ID
+#define MBOX_DEVICE_ID_1      XPAR_MBOX_1_DEVICE_ID
 static XMbox Mbox;			//Instance of the Mailbox driver
+static XMbox Mbox_bar;			//Instance of the Mailbox driver
 
 static XTft TftInstance;
 XGpio gpPB; //PB device instance.
@@ -172,7 +175,8 @@ volatile int start_time = 0;
 volatile int ball_speed = 10;
 volatile int bricks_left = BRICK_TOTAL;
 volatile int destroyed[80] = {0};
-volatile int bar_x = (PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2;
+volatile int bar_x[2] = {(PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2, (PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2};
+volatile int bar_y[2] = {BAR_TOP_Y, BAR_TOP_Y - 10};
 volatile int col_golden[] = {1,2};
 
 volatile int button_pressed = 0;
@@ -314,29 +318,29 @@ int TftDrawColumns(XTft* Tft) {
 	return 0;
 }
 
-void shift_bar(int shift_x) {
-  int bar_left = bar_x + shift_x;
+void shift_bar_1(int shift_x) {
+  int bar_left = bar_x[0] + shift_x;
   int bar_right = bar_left + BAR_WIDTH_TOTAL;
   if (bar_left<=PLAYAREA_LEFT) {
-	bar_x = PLAYAREA_LEFT+1;
+	bar_x[0] = PLAYAREA_LEFT+1;
   } else if (bar_right>=PLAYAREA_RIGHT) {
-    bar_x = PLAYAREA_RIGHT - BAR_WIDTH_TOTAL - 1;
+    bar_x[0] = PLAYAREA_RIGHT - BAR_WIDTH_TOTAL - 1;
   } else {
-	  bar_x += shift_x;
+	  bar_x[0] += shift_x;
   }
 }
 
-void shift_bar_and_redraw(int btn, int amount){
-	TftDrawRect(&TftInstance, bar_x, BAR_TOP_Y, BAR_WIDTH_TOTAL, BAR_HEIGHT, BLACK); // TODO: BG_COL
+void shift_bar_1_and_redraw(int btn, int amount){
+	TftDrawRect(&TftInstance, bar_x[0], bar_y[0], BAR_WIDTH_TOTAL, BAR_HEIGHT, BLACK); // TODO: BG_COL
 	switch (btn) {
 	  case 4:
-	  shift_bar(-amount);
+	  shift_bar_1(-amount);
 	  break;
 	  case 8:
-	  shift_bar(amount);
+	  shift_bar_1(amount);
 	  break;
 	}
-	TftDrawBar(&TftInstance, bar_x, BAR_TOP_Y);
+	TftDrawBar(&TftInstance, bar_x[0], bar_y[0]);
 }
 
 int clocks_since(int last_time) {
@@ -347,21 +351,14 @@ int clocks_since(int last_time) {
 * Function to send data structs over to MB1 via mailbox
 * ----------------------------------------------------
 */
-void send(int bar1_location_x, int bar2_location_x) {
-  struct bar_msg send_bar_msg;
-  send_msg.bar1_x = bar1_location_x;
-  send_msg.bar2_x = bar2_location_x;
-  XMbox_WriteBlocking(&Mbox, &send_bar_msg, 8);
-}
-
 
 void* thread_func_0 () {
   while(1) {
 	if (button_quick_pressed && !button_pressed && clocks_since(button_pressed_time)<BAR_WAIT_CLOCKS) {
-		shift_bar_and_redraw(button_quick_pressed, BAR_SPEED_1);
+		shift_bar_1_and_redraw(button_quick_pressed, BAR_SPEED_1);
 		button_quick_pressed = 0;
 	} else if (button_pressed && clocks_since(button_pressed_time) >= BAR_WAIT_CLOCKS) {
-    	shift_bar_and_redraw(button_pressed, BAR_SPEED_2);
+    	shift_bar_1_and_redraw(button_pressed, BAR_SPEED_2);
     }
     sleep(40);
   }
@@ -380,8 +377,8 @@ void update_state(state_msg data) {
 static void Mailbox_Receive(XMbox *MboxInstancePtr) {
   state_msg update_data;
   u32 bytes_read;
-	XMbox_Read(MboxInstancePtr, &update_data, MSG_BYTES, &bytes_read);
-	if (bytes_read==MSG_BYTES) {
+	XMbox_Read(MboxInstancePtr, &update_data, STATE_MSG_BYTES, &bytes_read);
+	if (bytes_read==STATE_MSG_BYTES) {
 		// Remove old Screen Components and draw new ones
 		// TODO: #define COL_BG = BLACK;
 		TftDrawBall(&TftInstance, ball_x,ball_y, BLACK);
@@ -401,9 +398,17 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
 	}
 }
 
+void send_to_mb1() {
+  bar_msg bar_msg;
+  bar_msg.bar1_x = bar_x[0];
+  bar_msg.bar2_x = bar_x[1];
+
+  XMbox_WriteBlocking(&Mbox_bar, &bar_msg, BAR_MSG_BYTES);
+}
+
 void* thread_func_1 () {
   while(1) {
-    //TODO: send(bar1_x, bar2_x);     define second bar
+	send_to_mb1();
     Mailbox_Receive(&Mbox);
 	sleep(40);
   }
@@ -432,7 +437,7 @@ int game_screen_init() {
   TftDrawRect(&TftInstance, PLAYAREA_LEFT, PLAYAREA_TOP, PLAYAREA_WIDTH,PLAYAREA_HEIGHT, BLACK);
   TftDrawColumns(&TftInstance);
   // TODO: Add second bar and ball
-  TftDrawBar(&TftInstance, bar_x,BAR_TOP_Y);
+  TftDrawBar(&TftInstance, bar_x[0],bar_y[0]);
   TftDrawBall(&TftInstance, ball_x,ball_y, WHITE);
   TftPrintScoreWords();
   TftPrintScore();
@@ -444,7 +449,7 @@ int mailbox_init() {
   int Status;
   XMbox_Config *ConfigPtr;
 
-  // Configure and init mailbox
+  // Configure and init mailbox 1
   ConfigPtr = XMbox_LookupConfig(MBOX_DEVICE_ID );
   if (ConfigPtr == (XMbox_Config *)NULL) {
 	print("-- Error configuring Mbox uB0 receiver--\r\n");
@@ -456,6 +461,19 @@ int mailbox_init() {
 	print("-- Error initializing Mbox uB0 receiver--\r\n");
 	return XST_FAILURE;
   }
+
+  // Configure and init mailbox 2
+  ConfigPtr = XMbox_LookupConfig(MBOX_DEVICE_ID_1 );
+	if (ConfigPtr == (XMbox_Config *)NULL) {
+	print("-- Error configuring Mbox_bar uB0 receiver--\r\n");
+	return XST_FAILURE;
+	}
+
+	Status = XMbox_CfgInitialize(&Mbox_bar, ConfigPtr, ConfigPtr->BaseAddress);
+	if (Status != XST_SUCCESS) {
+	print("-- Error initializing Mbox_bar uB0 receiver--\r\n");
+	return XST_FAILURE;
+	}
 
   return XST_SUCCESS;
 
