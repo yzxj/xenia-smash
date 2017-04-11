@@ -20,6 +20,11 @@ MultiProcessor.sdk/lab3d-0/
 MultiProcessor.sdk/lab3d-1/
 MultiProcessor.sdk/webtalk/
 
+MultiProcessor.sdk/proj0/Debug
+MultiProcessor.sdk/proj1/Debug
+MultiProcessor.sdk/xilkernel_bsp_0
+MultiProcessor.sdk/xilkernel_bsp_1
+
 *.elf
 *.elf.size
 *.o
