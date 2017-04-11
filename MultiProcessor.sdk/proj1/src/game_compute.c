@@ -44,7 +44,7 @@
 #define BAR_WIDTH_S 		10
 #define BAR_WIDTH_A 		10
 #define BALL_RADIUS 		7
-#define INIT_BALL_X				(PLAYAREA_LEFT + PLAYAREA_RIGHT)/2
+#define INIT_BALL_X				((PLAYAREA_LEFT + PLAYAREA_RIGHT)/2)
 #define INIT_BALL_Y 			BAR_TOP_Y-30
 #define BALL_INIT_DIR 	        0
 #define BALL_INIT_SPEED         250
@@ -65,18 +65,29 @@ static XMbox receive_box; 		//Instance of the receiver Mailbox driver
 
 XMutex Mutex;
 
-#define MSG_MAX_DESTROYED		8
-#define STATE_MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
+#define MSG_MAX_DESTROYED		6
+#define STATE_MSG_BYTES			8*4 + MSG_MAX_DESTROYED*2*4
 #define BAR_MSG_BYTES       	8
 
 typedef struct msg {
   int old_gold_col, new_gold_col;
   int ball_x_pos, ball_y_pos;
+  int ballspeed;
   int game_won;
   int total_score;
   int destroyed_num;
-  int destroyed_x[MSG_MAX_DESTROYED];
-  int destroyed_y[MSG_MAX_DESTROYED];
+  int destroyed_x0;
+  int destroyed_y0;
+  int destroyed_x1;
+  int destroyed_y1;
+  int destroyed_x2;
+  int destroyed_y2;
+  int destroyed_x3;
+  int destroyed_y3;
+  int destroyed_x4;
+  int destroyed_y4;
+  int destroyed_x5;
+  int destroyed_y5;
 };
 
 struct collision_msg {
@@ -120,8 +131,8 @@ volatile int ball_beyond_y = 0;						// flag to check if ball has gone beyond lo
 
 volatile int brick_destroyed[10][8];
 
-volatile int destroyed_col[8];
-volatile int destroyed_row[8];
+volatile int destroyed_col[MSG_MAX_DESTROYED];
+volatile int destroyed_row[MSG_MAX_DESTROYED];
 volatile int destroyed_index = 0;
 
 volatile int bar_x[2] = {(PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2, (PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2};
@@ -132,9 +143,10 @@ volatile int bar_y[2] = {BAR_TOP_Y, BAR_TOP_Y - 10};
 * ----------------------------------------------------------
 */
 void check_tenpt(void) {
-  if (tenpt_counter >= 10) {
-    // Remove 10 from the counter
-    tenpt_counter -= 10;
+  if (total_score - tenpt_counter >= 10) {
+	  xil_printf("in tenpt\r\n");
+	// Keep track of the last 'tens' value
+    tenpt_counter = total_score - total_score%10;
     // Release the resources for golden bricks
     sem_post(&sem_gold);
     sem_post(&sem_gold);
@@ -150,11 +162,26 @@ void check_tenpt(void) {
 */
 void send_data_to_mb0() {
   struct msg send_msg;
+	xil_printf("newgold: %d\r\n", newgold_id);
   send_msg.old_gold_col = oldgold_id;
   send_msg.new_gold_col = newgold_id;
   send_msg.ball_x_pos = new_ball_x;
   send_msg.ball_y_pos = new_ball_y;
+  send_msg.ballspeed = ballspeed;
   send_msg.total_score = total_score;
+  send_msg.destroyed_num = destroyed_index;
+  send_msg.destroyed_x0 = destroyed_col[0];
+  send_msg.destroyed_y0 = destroyed_row[0];
+  send_msg.destroyed_x1 = destroyed_col[1];
+  send_msg.destroyed_y1 = destroyed_row[1];
+  send_msg.destroyed_x2 = destroyed_col[2];
+  send_msg.destroyed_y2 = destroyed_row[2];
+  send_msg.destroyed_x3 = destroyed_col[3];
+  send_msg.destroyed_y3 = destroyed_row[3];
+  send_msg.destroyed_x4 = destroyed_col[4];
+  send_msg.destroyed_y4 = destroyed_row[4];
+  send_msg.destroyed_x5 = destroyed_col[5];
+  send_msg.destroyed_y5 = destroyed_row[5];
 
   XMbox_WriteBlocking(&Mbox, &send_msg, STATE_MSG_BYTES);
 }
@@ -166,10 +193,8 @@ void send_data_to_mb0() {
 void compete_gold(int ID) {
   int randomizer = rand() % 3;
   if (randomizer == 1 && sem_trywait(&sem_gold) == 0) {
-    pthread_mutex_lock(&mutex);
     oldgold_id=newgold_id;
     newgold_id=ID;
-    pthread_mutex_unlock(&mutex);
   }
 }
 
@@ -193,6 +218,7 @@ void* thread_mb_controller () {
 		// TODO: add ball2 to send
 		destroyed_index = 0;
 		if (game_status) {
+		    xil_printf("You Lose\r\n");
 			pthread_exit(0);
 		}
 		mailbox_receive(&Mbox, &bar);												// read bar locations from display processor (MB0)
@@ -249,12 +275,12 @@ int collided(int circle_x, int circle_y, double rect_x, double rect_y, int rect_
 }
 int brick_collided(int col, int row, int *collision_type) {
 	double rect_x = 65 + col*(BRICK_GAP+BRICK_WIDTH)  + BRICK_WIDTH/2.0;
-	double rect_y = 65 + col*(BRICK_GAP+BRICK_HEIGHT) + BRICK_HEIGHT/2.0;
+	double rect_y = 65 + row*(BRICK_GAP+BRICK_HEIGHT) + BRICK_HEIGHT/2.0;
 	return collided(new_ball_x, new_ball_y, rect_x, rect_y, BRICK_WIDTH, BRICK_HEIGHT, collision_type);
 }
 
 int reflect_about(int mirror_dir, int ball_dir) {
-	  xil_printf("mirror %d at %d\r\n", mirror_dir, xget_clock_ticks());
+	  xil_printf("angle %d hit mirror %d at %d\r\n", ball_dir, mirror_dir, xget_clock_ticks());
 	return (360 - ball_dir + 2*mirror_dir)%360;
 }
 

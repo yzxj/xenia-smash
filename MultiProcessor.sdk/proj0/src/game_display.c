@@ -122,16 +122,27 @@
 #define BAR_SPEED_2 		8
 
 /**************************** Type Definitions ******************************/
-#define MSG_MAX_DESTROYED		8
-#define STATE_MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
+#define MSG_MAX_DESTROYED		6
+#define STATE_MSG_BYTES			8*4 + MSG_MAX_DESTROYED*2*4
 typedef struct {
   int old_gold_col, new_gold_col;
   int ball_x_pos, ball_y_pos;
+  int ballspeed;
   int game_won;
   int total_score;
   int destroyed_num;
-  int destroyed_x[MSG_MAX_DESTROYED];
-  int destroyed_y[MSG_MAX_DESTROYED];
+  int destroyed_x0;
+  int destroyed_y0;
+  int destroyed_x1;
+  int destroyed_y1;
+  int destroyed_x2;
+  int destroyed_y2;
+  int destroyed_x3;
+  int destroyed_y3;
+  int destroyed_x4;
+  int destroyed_y4;
+  int destroyed_x5;
+  int destroyed_y5;
 } state_msg;
 
 #define BAR_MSG_BYTES			8
@@ -370,26 +381,54 @@ void update_state(state_msg data) {
   ball_x = data.ball_x_pos;
   ball_y = data.ball_y_pos;
   score = data.total_score;
-  // TODO: Destroy bricks?
+  ball_speed = data.ballspeed;
   time_elapsed = (xget_clock_ticks() - start_time) / 100;
+}
+
+void destroy_brick(int col, int row) {
+	int rect_x = PLAYAREA_LEFT + BRICK_GAP + col*(BRICK_WIDTH+BRICK_GAP);
+	int rect_y = PLAYAREA_TOP + BRICK_GAP + row*(BRICK_HEIGHT+BRICK_GAP);
+	destroyed[col*BRICK_ROWS + row] = 1;
+	bricks_left--;
+	TftDrawRect(&TftInstance, rect_x, rect_y, BRICK_WIDTH, BRICK_HEIGHT, BLACK);
 }
 
 static void Mailbox_Receive(XMbox *MboxInstancePtr) {
   state_msg update_data;
   u32 bytes_read;
+  int i;
 	XMbox_Read(MboxInstancePtr, &update_data, STATE_MSG_BYTES, &bytes_read);
 	if (bytes_read==STATE_MSG_BYTES) {
+		xil_printf("Received\r\n");
+
 		// Remove old Screen Components and draw new ones
 		// TODO: #define COL_BG = BLACK;
 		TftDrawBall(&TftInstance, ball_x,ball_y, BLACK);
 		TftDrawBall(&TftInstance, update_data.ball_x_pos,update_data.ball_y_pos, WHITE);
-		// TODO: Destroy bricks
+		// Destroy bricks
+		switch(update_data.destroyed_num) {
+			case 6:
+				destroy_brick(update_data.destroyed_x5, update_data.destroyed_y5);
+			case 5:
+				destroy_brick(update_data.destroyed_x4, update_data.destroyed_y4);
+			case 4:
+				destroy_brick(update_data.destroyed_x3, update_data.destroyed_y3);
+			case 3:
+				destroy_brick(update_data.destroyed_x2, update_data.destroyed_y2);
+			case 2:
+				destroy_brick(update_data.destroyed_x1, update_data.destroyed_y1);
+			case 1:
+				destroy_brick(update_data.destroyed_x0, update_data.destroyed_y0);
+		}
 		// TODO: 2 bars 2 balls
 		if (update_data.old_gold_col != col_golden[0] || update_data.new_gold_col != col_golden[1]){
+			xil_printf("replacing gold: %d %d\r\n", col_golden[0], col_golden[1]);
 			TftDrawColumn(&TftInstance, col_golden[0], GREEN);
 			TftDrawColumn(&TftInstance, col_golden[1], GREEN);
+			xil_printf("drawing gold: %d %d\r\n", update_data.old_gold_col, update_data.new_gold_col);
 			TftDrawColumn(&TftInstance, update_data.old_gold_col, ORANGE);
 			TftDrawColumn(&TftInstance, update_data.new_gold_col, ORANGE);
+			xil_printf("done replacing gold\r\n");
 		}
 		// Save new data, including score/time/speed/bricksleft
 		update_state(update_data);
