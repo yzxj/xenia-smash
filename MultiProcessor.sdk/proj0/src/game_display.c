@@ -116,16 +116,23 @@
 #define BAR_WIDTH_N 		40
 #define BAR_WIDTH_S 		10
 #define BAR_WIDTH_A 		10
-#define BAR_WAIT_CLOCKS 	25
 #define BALL_RADIUS 		7
+#define BAR_WAIT_CLOCKS 	25
 #define BAR_SPEED_1 		25
 #define BAR_SPEED_2 		8
 
 /**************************** Type Definitions ******************************/
+#define MSG_MAX_DESTROYED		8
+#define MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
 typedef struct {
-  int id, old_gold_col, new_gold_col, ball_x_pos, ball_y_pos, total_score;
+  int old_gold_col, new_gold_col;
+  int ball_x_pos, ball_y_pos;
+  int game_won;
+  int total_score;
+  int destroyed_num;
+  int destroyed_x[MSG_MAX_DESTROYED];
+  int destroyed_y[MSG_MAX_DESTROYED];
 } state_msg;
-#define MSG_BYTES 24
 
 /************************** Function Prototypes *****************************/
 
@@ -350,6 +357,7 @@ void update_state(state_msg data) {
   ball_x = data.ball_x_pos;
   ball_y = data.ball_y_pos;
   score = data.total_score;
+  // TODO: Destroy bricks?
   time_elapsed = (xget_clock_ticks() - start_time) / 100;
 }
 
@@ -362,6 +370,8 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
 		// TODO: #define COL_BG = BLACK;
 		TftDrawBall(&TftInstance, ball_x,ball_y, BLACK);
 		TftDrawBall(&TftInstance, update_data.ball_x_pos,update_data.ball_y_pos, WHITE);
+		// TODO: Destroy bricks
+		// TODO: 2 bars 2 balls
 		if (update_data.old_gold_col != col_golden[0] || update_data.new_gold_col != col_golden[1]){
 			TftDrawColumn(&TftInstance, col_golden[0], GREEN);
 			TftDrawColumn(&TftInstance, col_golden[1], GREEN);
@@ -404,13 +414,12 @@ int game_screen_init() {
   XTft_SetPos(&TftInstance, 0,0);
   TftDrawRect(&TftInstance, PLAYAREA_LEFT, PLAYAREA_TOP, PLAYAREA_WIDTH,PLAYAREA_HEIGHT, BLACK);
   TftDrawColumns(&TftInstance);
+  // TODO: Add second bar and ball
   TftDrawBar(&TftInstance, bar_x,BAR_TOP_Y);
   TftDrawBall(&TftInstance, ball_x,ball_y, WHITE);
   TftPrintScoreWords();
   TftPrintScore();
   start_time = xget_clock_ticks();
-  // Testing Point (0,0)
-  TftDrawRect(&TftInstance, 0,0, 5,5, BLUE);
   return 0;
 }
 
