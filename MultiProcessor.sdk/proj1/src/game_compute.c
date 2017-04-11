@@ -90,6 +90,10 @@ typedef struct {
   uint32_t col;
 } ball_msg;
 
+typedef struct {
+  int bar1_x, bar2_x;
+} bar_msg;
+
 pthread_attr_t attr;
 struct sched_param sched_par;
 pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, scoreboard;
@@ -122,6 +126,9 @@ volatile int brick_destroyed[10][8];
 volatile int destroyed_col[8];
 volatile int destroyed_row[8];
 volatile int destroyed_index = 0;
+
+volatile int bar1_x = 0;
+volatile int bar2_x = 0;
 
 /* ----------------------------------------------------------
 * Function that checks if player has incremented score by 10
@@ -191,22 +198,30 @@ void compete_gold(int ID) {
   sleep(100);
 }
 
-void* thread_mb_controller () {
-  while(1) {
-    send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// send mailbox to MB0
+static void mailbox_receive(XMbox *MboxInstancePtr, bar_msg *bar_location_pointer) {
+ 	int received_bytes;
+ 	XMbox_Read(MboxInstancePtr, bar_location_pointer, 8, &received_bytes);
+ 	bar1_x = bar_location_pointer->bar1_x;
+ 	bar2_x = bar_location_pointer->bar2_x;
+}
 
-    // FIXME: Is there a need to send game status separately from the above send?
-    // We also need to send bricks destroyed
-    if(columns_destroyed == 10) {												// check if all 10 brick columns are destroyed
-      game_status = 1;
-      send_game_status(game_status);											// send mailbox to MB0 to update winning UI
-    }
-    if (ball_beyond_y) {
-      game_status = 0;
-      send_game_status(game_status);
-    }
-    sleep(40);
-  }
+void* thread_mb_controller () {
+ 	bar_msg bar;
+	while(1) {
+		send(1, oldgold_id, newgold_id, new_ball_x, new_ball_y, total_score);		// send mailbox to MB0
+		mailbox_receive(&Mbox, &bar)												// read bar locations from display processor (MB0)
+		// FIXME: Is there a need to send game status separately from the above send?
+		// We also need to send bricks destroyed
+		if(columns_destroyed == 10) {												// check if all 10 brick columns are destroyed
+			game_status = 1;
+			send_game_status(game_status);											// send mailbox to MB0 to update winning UI
+		}
+		if (ball_beyond_y) {
+			game_status = 0;
+			send_game_status(game_status);
+		}
+		sleep(40);
+	}
 }
 
 void* thread_ball () {
