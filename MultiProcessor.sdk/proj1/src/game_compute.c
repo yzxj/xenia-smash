@@ -22,6 +22,8 @@
 #include <sys/ipc.h>
 #include <sys/timer.h>
 
+#define FPS					25
+
 #define PI					3.14159
 #define DISPLAY_COLUMNS         640
 #define DISPLAY_ROWS            480
@@ -106,17 +108,16 @@ sem_t sem_gold;
 sem_t sem_bricks;
 
 volatile int ball_dir = 0; 								// 0: up, 180: down
-volatile int ballspeed = 50;
+volatile int ballspeed = 250;
 volatile int new_ball_x = INIT_BALL_X;
 volatile int new_ball_y = INIT_BALL_Y;
-volatile int ballspeed_x = INIT_BALL_SPEED_X;
-volatile int ballspeed_y = INIT_BALL_SPEED_Y;
+volatile int ballspeed_x = 0;
+volatile int ballspeed_y = 250;
 volatile int oldgold_id = 0;
 volatile int newgold_id = 0;
 
 volatile int total_score = 0;
 volatile int tenpt_counter = 0;
-volatile int change_golden_status = 1;					// initialize the first 2 golden columns
 volatile int twocol_counter = 2;						// track the number of golden columns we are changing
 
 volatile int game_status = 0;							// [0: In-progress], [-1: Lose], [1: Win]
@@ -138,12 +139,15 @@ volatile int bar_y[2] = {BAR_TOP_Y, BAR_TOP_Y - 10};
 */
 void check_tenpt(void) {
   if (tenpt_counter >= 10) {
-    tenpt_counter -= 10;							//	remove 10 from the score
-    change_golden_status = 1;						//	set golden flag to allow brick threads to compete for turning gold
+    // Remove 10 from the counter
+    tenpt_counter -= 10;
+    // Release the resources for golden bricks
+    sem_post(&sem_gold);
+    sem_post(&sem_gold);
+    // Increase ball speed
+    // TODO: semaphore?
     ballspeed = (ballspeed+25>1000) ? 1000 : ballspeed+25;
   }
-  else
-  return;
 }
 
 /* ----------------------------------------------------
@@ -332,8 +336,8 @@ void* thread_ball () {
 	ballspeed_y = ballspeed * cos(ball_dir * PI / 180);
 
     // Update
-    new_ball_x += ballspeed_x;
-    new_ball_y += ballspeed_y;
+    new_ball_x += ballspeed_x / FPS;
+    new_ball_y += ballspeed_y / FPS;
 
     sleep(40);
   }
@@ -352,9 +356,10 @@ void update_score(int col) {
   } else {
     total_score +=1;
   }
+  check_tenpt();
 }
 
-void save_destroyed_brick(int row, int col) {
+void register_destroyed_brick(int row, int col) {
     pthread_mutex_lock(&mutex);
     destroyed_col[destroyed_index] = col;
     destroyed_row[destroyed_index] = row;
@@ -371,13 +376,13 @@ void check_collisions_send_updates(int col, int *bricks_left) {
   for(row=0; row<8; row++) {
 	  // only check collision if the specific brick is alive
 	  // TODO: Check ball1 and 2
-	  if(!brick_destroyed[col][row] && brick_collided(col, row, &collision_type)){
+	  if(!brick_destroyed[col][row] && brick_collided(col, row, &collision_type)) {
 		  brick_destroyed[col][row] = 1;
 		  *bricks_left = *bricks_left - 1;
 		  inform_ball_thread(collision_type);
 		  update_score(col);
-      save_destroyed_brick(row, col);
-    }
+          register_destroyed_brick(row, col);
+      }
   }
 }
 
@@ -477,17 +482,6 @@ void* thread_brick_col_10 () {
   }
 }
 
-
-void* thread_scoreboard () {
-  while(1) {
-    // Increase ball speed by 25fps for every 10 points gained
-    if ((ballspeed_x != MAX_BALL_SPEED) && (ballspeed_y != MAX_BALL_SPEED)) {
-      //      ballspeed_x = INIT_BALL_SPEED_X + (total_score/10) + bar_region ;
-      //      ballspeed_y = INIT_BALL_SPEED_Y + (total_score/10) + bar_region ;
-    }
-  }
-}
-
 /**
 *  Main - Inititialization for Semaphore, HW+SW Mutex, GPIOs, Mailbox and Threads
 */
@@ -547,12 +541,11 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   * thread_mb_controller  (highest priority)  : Mailbox Controller to pipe data to MB1
   * thread_ball                               : Ball
   * thread_brick_col_1 ~ thread_brick_col_10  : Brick Columns
-  * thread_scoreboard     (lowest priority)   : Scoreboard
   * -----------------------------------------------------------------------------------
   */
   pthread_attr_init (&attr);
 
-  // Priority 1 for thread_mb_controller
+  // thread_mb_controller (Priority 1)
   sched_par.sched_priority = 1;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_mb_controller
@@ -564,7 +557,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Mailbox Controller Thread launched with ID %d \r\n",mailbox_controller);
   }
 
-  // Priority 2 for thread_ball
+  // thread_ball (Priority 2)
   sched_par.sched_priority = 2;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_ball
@@ -576,7 +569,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Ball Thread launched with ID %d \r\n",ball);
   }
 
-  // Priority 3 for thread_brick_col_1
+  // thread_brick_col_1 (Brick cols share priority 3)
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_1
@@ -588,7 +581,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 1 Thread launched with ID %d \r\n",col1);
   }
 
-  // Priority 4 for thread_brick_col_2
+  // thread_brick_col_2
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_2
@@ -600,7 +593,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 2 Thread launched with ID %d \r\n",col2);
   }
 
-  // Priority 5 for thread_brick_col_3
+  // thread_brick_col_3
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread 5
@@ -612,7 +605,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 3 Thread launched with ID %d \r\n",col3);
   }
 
-  // Priority 6 for thread_brick_col_4
+  // thread_brick_col_4
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_4
@@ -624,7 +617,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 4 launched with ID %d \r\n",col4);
   }
 
-  // Priority 7 for thread_brick_col_5
+  // thread_brick_col_5
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_5
@@ -636,7 +629,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 5 launched with ID %d \r\n",col5);
   }
 
-  // Priority 8 for thread_brick_col_6
+  // thread_brick_col_6
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_6
@@ -648,7 +641,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 6 launched with ID %d \r\n",col6);
   }
 
-  // Priority 9 for thread_brick_col_7
+  // thread_brick_col_7
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_7
@@ -660,7 +653,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 7 launched with ID %d \r\n",col7);
   }
 
-  // Priority 10 for thread_brick_col_8
+  // thread_brick_col_8
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_8
@@ -672,7 +665,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 8 launched with ID %d \r\n",col8);
   }
 
-  // Priority 11 for thread_brick_col_9
+  // thread_brick_col_9
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_9
@@ -684,7 +677,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("Brick Column 9 launched with ID %d \r\n",col9);
   }
 
-  // Priority 12 for thread_brick_col_10
+  // thread_brick_col_10
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
   //start thread_brick_col_10
@@ -694,18 +687,6 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   }
   else {
     xil_printf ("Brick Column 10 launched with ID %d \r\n",col10);
-  }
-
-  // Priority 13 for thread_scoreboard
-  sched_par.sched_priority = 4;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_scoreboard
-  ret = pthread_create (&scoreboard, &attr, (void*)thread_scoreboard, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_scoreboard...\r\n", ret);
-  }
-  else {
-    xil_printf ("Scoreboard Thread launched with ID %d \r\n",scoreboard);
   }
 
   return 0;
