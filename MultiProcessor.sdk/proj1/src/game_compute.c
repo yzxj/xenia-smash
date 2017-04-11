@@ -92,6 +92,10 @@ typedef struct {
   uint32_t col;
 } ball_msg;
 
+typedef struct {
+  int bar1_x, bar2_x;
+} bar_msg;
+
 pthread_attr_t attr;
 struct sched_param sched_par;
 pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, scoreboard;
@@ -171,16 +175,24 @@ void compete_gold(int ID) {
   }
 }
 
-void* thread_mb_controller () {
-  while(1) {
-	game_status = (columns_destroyed == 10);
-	send_data_to_mb0();
+static void mailbox_receive(XMbox *MboxInstancePtr, bar_msg *bar_location_pointer) {
+ 	int received_bytes;
+ 	XMbox_Read(MboxInstancePtr, bar_location_pointer, 8, &received_bytes);
+ 	bar_x[0] = bar_location_pointer->bar1_x;
+ 	bar_x[1] = bar_location_pointer->bar2_x;
+}
 
-	if (game_status) {
-		pthread_exit(0);
+void* thread_mb_controller () {
+ 	bar_msg bar;
+	while(1) {
+    game_status = game_status || (columns_destroyed == 10);
+  	send_data_to_mb0();
+		if (game_status) {
+  		pthread_exit(0);
+		}
+		mailbox_receive(&Mbox, &bar);												// read bar locations from display processor (MB0)
+		sleep(40);
 	}
-    sleep(40);
-  }
 }
 
 // Returns 1 if collided, 0 if not
@@ -355,7 +367,7 @@ void check_collisions_send_updates(int col, int *bricks_left) {
 	// if not destroyed
 	// check for collision
 	// if so: update destroyed bricks, score, and send collision data
-  int row, collision_type; 
+  int row, collision_type;
   for(row=0; row<8; row++) {
 	  // only check collision if the specific brick is alive
 	  // TODO: Check ball1 and 2

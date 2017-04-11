@@ -134,6 +134,10 @@ typedef struct {
   int destroyed_y[MSG_MAX_DESTROYED];
 } state_msg;
 
+typedef struct {
+  int bar1_x, bar2_x;
+} bar_msg;
+
 /************************** Function Prototypes *****************************/
 
 int TftInit(u32 TftDeviceId);
@@ -339,6 +343,18 @@ int clocks_since(int last_time) {
 	return xget_clock_ticks() - last_time;
 }
 
+/* ----------------------------------------------------
+* Function to send data structs over to MB1 via mailbox
+* ----------------------------------------------------
+*/
+void send(int bar1_location_x, int bar2_location_x) {
+  struct bar_msg send_bar_msg;
+  send_msg.bar1_x = bar1_location_x;
+  send_msg.bar2_x = bar2_location_x;
+  XMbox_WriteBlocking(&Mbox, &send_bar_msg, 8);
+}
+
+
 void* thread_func_0 () {
   while(1) {
 	if (button_quick_pressed && !button_pressed && clocks_since(button_pressed_time)<BAR_WAIT_CLOCKS) {
@@ -387,6 +403,7 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
 
 void* thread_func_1 () {
   while(1) {
+    //TODO: send(bar1_x, bar2_x);     define second bar
     Mailbox_Receive(&Mbox);
 	sleep(40);
   }
