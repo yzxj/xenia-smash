@@ -22,6 +22,7 @@
 #include <sys/ipc.h>
 #include <sys/timer.h>
 
+#define PI					3.14159
 #define DISPLAY_COLUMNS         640
 #define DISPLAY_ROWS            480
 #define SCOREAREA_LEFT 		535
@@ -71,7 +72,7 @@ static XMbox Mbox;			//Instance of the Mailbox driver
 XMutex Mutex;
 
 #define MSG_MAX_DESTROYED		8
-#define MSG_SIZE				7*4 + MSG_MAX_DESTROYED*2*4
+#define MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
 struct msg {
   int old_gold_col, new_gold_col;
   int ball_x_pos, ball_y_pos;
@@ -124,6 +125,9 @@ volatile int destroyed_col[8];
 volatile int destroyed_row[8];
 volatile int destroyed_index = 0;
 
+volatile int bar_x[2] = {(PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2, (PLAYAREA_LEFT + PLAYAREA_RIGHT - BAR_WIDTH_TOTAL)/2};
+volatile int bar_y[2] = {BAR_TOP_Y, BAR_TOP_Y - 10};
+
 /* ----------------------------------------------------------
 * Function that checks if player has incremented score by 10
 * ----------------------------------------------------------
@@ -132,7 +136,7 @@ void check_tenpt(void) {
   if (tenpt_counter >= 10) {
     tenpt_counter -= 10;							//	remove 10 from the score
     change_golden_status = 1;						//	set golden flag to allow brick threads to compete for turning gold
-    // TODO: include increase speed function (25px/sec)
+    ballspeed = (ballspeed+25>1000) ? 1000 : ballspeed+25;
   }
   else
   return;
@@ -150,7 +154,7 @@ void send_data_to_mb0() {
   send_msg.ball_y_pos = new_ball_y;
   send_msg.total_score = total_score;
 
-  XMbox_WriteBlocking(&Mbox, &send_msg, 24);
+  XMbox_WriteBlocking(&Mbox, &send_msg, MSG_BYTES);
 }
 
 /* ------------------------------------------------------------------
@@ -179,106 +183,33 @@ void* thread_mb_controller () {
   }
 }
 
-void* thread_ball () {
-  int i = 0;
-  int msgid;
-  struct collision_msg receive_msg;
-  while(1) {
-    int hit_angle_plus	=0;
-    int hit_angle_minus	=0;
-    int hit_speed_plus	=0;
-    int hit_speed_minus	=0;
-    int hit_zone_bottom	=0;
-    int hit_zone_top	=0;
-    int hit_zone_leftright	=0;
-    int hit_brick_topbottom	=0;
-    int hit_brick_leftright	=0;
-    int hit_brick_corner	=0;
-
-    if (hit_angle_plus) {
-      // increase by 15deg up to 75 (0 is up, 75 is 165 with respect to bar)
-    }
-    if (hit_angle_minus) {
-      // decrease by 15deg up down to 285
-    }
-    if (hit_speed_plus) {
-      ballspeed = (ballspeed > BALL_MAX_SPEED-100) ? BALL_MAX_SPEED : ballspeed + 100;
-      // TODO: update ball angle
-    }
-    if (hit_speed_minus) {
-      ballspeed = (ballspeed < BALL_MIN_SPEED+100) ? BALL_MIN_SPEED : ballspeed - 100;
-    }
-
-    // TODO: Update ballspeed_x/y according to speed/angle?
-    // TODO: How to read where it hit brick?
-
-    if (hit_zone_top || hit_brick_topbottom) {
-      ballspeed_y = -ballspeed_y;
-    }
-    if (hit_zone_leftright || hit_brick_leftright) {
-      ballspeed_x = -ballspeed_x;
-    }
-
-    // Brick-related should be separate. Need MQ loop
-    if (hit_brick_corner) {
-      int temp = ballspeed_x;
-      ballspeed_x = ballspeed_y;
-      ballspeed_y = temp;
-    }
-
-    // Lose condition
-    if (hit_zone_bottom) {
-      // TODO: Lose game
-      pthread_exit(0);
-    }
-
-    new_ball_x += ballspeed_x;
-    new_ball_y += ballspeed_y;
-
-    if (new_ball_y >= 413) {				// check if ball's y-pos is below the set limit
-      ball_beyond_y = 1;
-      pthread_exit(0);						  // no longer update the ball positioning
-    }
-
-    for (i=0; i<10; i++) {
-      msgid = msgget(i, IPC_CREAT);
-      msgrcv(msgid, &receive_msg, 8, 0, 0);
-      // [receive_msg.brick_col: the brick column], [receive_msg.brick_row: the brick row (-ve means corner strike on that brick)]
-      //TODO: ball deflection based on receive_msg
-    }
-    sleep(40);
-  }
-}
-
 // Returns 1 if collided, 0 if not
 // Saves collision type: 0: nothing. 1: top/bottom. 2: left/right. 3-6: corners, clockwise from top right
-int collided(int col, int row, int *collision_type) {
+int collided(int circle_x, int circle_y, double rect_x, double rect_y, int rect_width, int rect_height, int *collision_type) {
 	double circle_distance_x, circle_distance_y, corner_distance_sq;
-	double rect_x = 65 + col*(BRICK_GAP+BRICK_WIDTH)  + BRICK_WIDTH/2.0;
-	double rect_y = 65 + col*(BRICK_GAP+BRICK_HEIGHT) + BRICK_HEIGHT/2.0;
 
-	circle_distance_x = fabs(new_ball_x - rect_x);
-	circle_distance_y = fabs(new_ball_y - rect_y);
+	circle_distance_x = fabs(circle_x - rect_x);
+	circle_distance_y = fabs(circle_y - rect_y);
 	*collision_type = 0;
 
-	// Easy case: Ball too far
-	if (circle_distance_x > (BRICK_WIDTH/2.0 + BALL_RADIUS) || circle_distance_y > (BRICK_HEIGHT/2.0 + BALL_RADIUS)) {
+	// Easy case: Circle too far
+	if (circle_distance_x > (rect_width/2.0 + BALL_RADIUS) || circle_distance_y > (rect_height/2.0 + BALL_RADIUS)) {
 		return 0;
 	}
 
-	// Ball within brick's width -> must be above or below
-	if (circle_distance_x <= BRICK_WIDTH/2.0) {
+	// Circle within rect's width -> must be above or below
+	if (circle_distance_x <= rect_width/2.0) {
 		*collision_type = 1;
 		return 1;
 	}
-	// Ball within brick's height -> must be left or right
-	if (circle_distance_y <= BRICK_HEIGHT/2.0) {
+	// Circle within rect's height -> must be left or right
+	if (circle_distance_y <= rect_height/2.0) {
 		*collision_type = 2;
 		return 1;
 	}
 
-	// Ball within radius of corner
-	corner_distance_sq = pow((circle_distance_x - BRICK_WIDTH/2.0),2) + pow((circle_distance_y - BRICK_HEIGHT/2.0),2);
+	// Circle within radius of corner
+	corner_distance_sq = pow((circle_distance_x - rect_width/2.0),2) + pow((circle_distance_y - rect_height/2.0),2);
 	if (corner_distance_sq <= pow(BALL_RADIUS, 2)) {
 		if (new_ball_x > rect_x) {
 			if (new_ball_y > rect_y) {
@@ -296,14 +227,110 @@ int collided(int col, int row, int *collision_type) {
 		return 1;
 	}
 
-	// Ball slightly outside of corner
+	// Circle slightly outside of corner
 	return 0;
 }
+int brick_collided(int col, int row, int *collision_type) {
+	double rect_x = 65 + col*(BRICK_GAP+BRICK_WIDTH)  + BRICK_WIDTH/2.0;
+	double rect_y = 65 + col*(BRICK_GAP+BRICK_HEIGHT) + BRICK_HEIGHT/2.0;
+	return collided(new_ball_x, new_ball_y, rect_x, rect_y, BRICK_WIDTH, BRICK_HEIGHT, collision_type);
+}
 
-void inform_ball_thread(int *collision_type) {
+int reflect_about(int mirror_dir, int ball_dir) {
+	return (360 - ball_dir + 2*mirror_dir)%360;
+}
+
+void* thread_ball () {
+  int i = 0;
+  int msgid;
+  struct collision_msg receive_msg;
+  while(1) {
+	// Deal with brick deflection first
+	msgid = msgget(0, IPC_CREAT);
+	for (i=0; i<MSG_MAX_DESTROYED; i++) {
+	  if (msgrcv(msgid, &receive_msg, 4, 0, IPC_NOWAIT) == 4) {
+		  switch(receive_msg.type) {
+		  case 1:
+			  ball_dir = reflect_about(90, ball_dir);
+		      break;
+		  case 2:
+		      ball_dir = reflect_about(0, ball_dir);
+			  break;
+		  case 3:
+			  ball_dir = reflect_about(315, ball_dir);
+			  break;
+		  case 4:
+			  ball_dir = reflect_about(45, ball_dir);
+			  break;
+		  case 5:
+			  ball_dir = reflect_about(135, ball_dir);
+			  break;
+		  case 6:
+			  ball_dir = reflect_about(225, ball_dir);
+			  break;
+		  }
+	  }
+	}
+	// Deal with hitting the bar next (shouldn't happen if hitting bricks)
+	// TODO: check bar 2.
+	int bar_collision_type;
+	int bar1_x = bar_x[0] + BAR_WIDTH_TOTAL/2;
+	int bar1_y = bar_y[0] + BAR_HEIGHT/2.0;
+	int ball_dist_x = new_ball_x - bar1_x;
+	if (collided(new_ball_x, new_ball_y, bar1_x, bar1_y, BAR_WIDTH_TOTAL, BAR_HEIGHT, &bar_collision_type)) {
+		switch(bar_collision_type) {
+		case 1:
+			ball_dir = reflect_about(90,ball_dir);
+			if (ball_dist_x < -30) {
+				ball_dir = (ball_dir-15<15) 	 ? 15 	: ball_dir-15;
+			} else if (ball_dist_x > 30) {
+				ball_dir = (ball_dir+15>165) 	 ? 165 	: ball_dir+15;
+			} else if (ball_dist_x < -20) {
+				ballspeed = (ballspeed-100<50) 	 ? 50 	: ballspeed-100;
+			} else if (ball_dist_x > 20) {
+				ballspeed = (ballspeed+100>1000) ? 1000 : ballspeed+100;
+			}
+			break;
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+			ball_dir += 180;
+			break;
+		}
+	}
+
+    // Deal with hitting zone edges last
+    if (new_ball_y <= 79) {
+    	ball_dir = reflect_about(90, ball_dir);
+    }
+    if (new_ball_x <= 79 || new_ball_x >= 501) {
+    	ball_dir = reflect_about(0, ball_dir);
+    }
+
+    // Check for lose condition
+	if (new_ball_y >= 410) {
+	  game_status = -1;
+	  pthread_exit(0);
+	}
+
+    // Update ballspeed_x/y according to speed/angle
+	ballspeed_x = ballspeed * sin(ball_dir * PI / 180);
+	ballspeed_y = ballspeed * cos(ball_dir * PI / 180);
+
+    // Update
+    new_ball_x += ballspeed_x;
+    new_ball_y += ballspeed_y;
+
+    sleep(40);
+  }
+}
+
+void inform_ball_thread(int collision_type) {
     struct collision_msg send_collision_msg;
-    int msgid;
-    send_collision_msg.type = *collision_type;
+    int msgid = msgget(0, IPC_CREAT);
+    send_collision_msg.type = collision_type;
     msgsnd(msgid, &send_collision_msg, 4, 0);
 }
 
@@ -315,11 +342,12 @@ void update_score(int col) {
   }
 }
 
-void save_destroyed_brick(int row, col, index) {
-    pthread_mutex_lock (&mutex);
-    destroyed_col[index] = col;
-    destroyed_row[index] = row;
-    pthread_mutex_unlock (&mutex);
+void save_destroyed_brick(int row, int col) {
+    pthread_mutex_lock(&mutex);
+    destroyed_col[destroyed_index] = col;
+    destroyed_row[destroyed_index] = row;
+    destroyed_index++;
+    pthread_mutex_unlock(&mutex);
 }
 
 void check_collisions_send_updates(int col, int *bricks_left) {
@@ -328,16 +356,15 @@ void check_collisions_send_updates(int col, int *bricks_left) {
 	// check for collision
 	// if so: update destroyed bricks, score, and send collision data
   int row, collision_type; 
-  int index = 0;
   for(row=0; row<8; row++) {
 	  // only check collision if the specific brick is alive
-	  if(!brick_destroyed[col][row] && collided(col, row, &collision_type)){
+	  // TODO: Check ball1 and 2
+	  if(!brick_destroyed[col][row] && brick_collided(col, row, &collision_type)){
 		  brick_destroyed[col][row] = 1;
 		  *bricks_left = *bricks_left - 1;
 		  inform_ball_thread(collision_type);
 		  update_score(col);
-      save_destroyed_brick(row, col, index);
-      index++;
+      save_destroyed_brick(row, col);
     }
   }
 }
@@ -480,7 +507,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   // Init HW Mutex
   MutexConfigPtr = XMutex_LookupConfig(MUTEX_DEVICE_ID);
   if (MutexConfigPtr == (XMutex_Config *)NULL){
-    ("B1-- ERROR  init HW mutex...\r\n");
+	xil_printf ("B1-- ERROR  init HW mutex...\r\n");
   }
   Status = XMutex_CfgInitialize(&Mutex, MutexConfigPtr, MutexConfigPtr->BaseAddress);
   if (Status != XST_SUCCESS){
