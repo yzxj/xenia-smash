@@ -304,7 +304,7 @@ void bar_collided(int bar) {
 			if (ball_dir>90 && ball_dir<270) {
 				ball_dir = reflect_about(90,ball_dir);
 				if (bar == 1) {
-					// Randomize for second player
+					// Randomize for second player (only for hits on the top)
 					int new_dir = rand()%75;
 					if (rand()%2 == 1) {
 						ball_dir = (360 - new_dir)%360;
@@ -571,16 +571,6 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     xil_printf ("-- ERROR (%d) init uart_mutex...\r\n", ret);
   }
   print("--Initialized SW Mutex-- uB0 \r\n");
-
-  // Init HW Mutex
-  MutexConfigPtr = XMutex_LookupConfig(MUTEX_DEVICE_ID);
-  if (MutexConfigPtr == (XMutex_Config *)NULL){
-	xil_printf ("B1-- ERROR  init HW mutex...\r\n");
-  }
-  Status = XMutex_CfgInitialize(&Mutex, MutexConfigPtr, MutexConfigPtr->BaseAddress);
-  if (Status != XST_SUCCESS){
-    xil_printf ("B1-- ERROR  init HW mutex...\r\n");
-  }
 
   print("-- Entering main_prog() uB0 RECEIVER--\r\n");
 

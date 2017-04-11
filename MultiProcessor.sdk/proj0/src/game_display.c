@@ -539,8 +539,8 @@ static void gpPBIntHandler(void *arg) //Should be very short (in time). In a pra
   // Wait 250ms before moving 8px per interval.
   debounce(&last_pressed_up, 	&quick_pressed_up, 		(last_button_pressed/16), 		(button_pressed/16));
   debounce(&last_pressed_right, &quick_pressed_right, 	((last_button_pressed%16)/8),	((button_pressed%16)/8));
-  debounce(&last_pressed_left, &quick_pressed_left, 	((last_button_pressed%8)/4),	((button_pressed%8)/4));
-  debounce(&last_pressed_down, &quick_pressed_down, 	((last_button_pressed%4)/2),	((button_pressed%4)/2));
+  debounce(&last_pressed_left, 	&quick_pressed_left, 	((last_button_pressed%8)/4),	((button_pressed%8)/4));
+  debounce(&last_pressed_down, 	&quick_pressed_down, 	((last_button_pressed%4)/2),	((button_pressed%4)/2));
 }
 
 int game_screen_init() {
