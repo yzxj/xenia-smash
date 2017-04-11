@@ -63,7 +63,9 @@
 /*	Mailbox Declaration	*/
 #define MY_CPU_ID				XPAR_CPU_ID
 #define MBOX_DEVICE_ID			XPAR_MBOX_0_DEVICE_ID
-static XMbox Mbox;			//Instance of the Mailbox driver
+#define MBOX_DEVICE_ID_1      XPAR_MBOX_1_DEVICE_ID
+static XMbox Mbox;			   //Instance of the Mailbox driver
+static Xreceive_box receive_box; //Instance of the receiver Mailbox driver 
 
 /*	MUTEX ID PARAMETER for HW Mutex	*/
 #define MUTEX_DEVICE_ID			XPAR_MUTEX_0_IF_1_DEVICE_ID
@@ -73,6 +75,7 @@ XMutex Mutex;
 
 #define MSG_MAX_DESTROYED		8
 #define MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
+#define BAR_MSG_BYTES       
 struct msg {
   int old_gold_col, new_gold_col;
   int ball_x_pos, ball_y_pos;
@@ -175,11 +178,15 @@ void compete_gold(int ID) {
   }
 }
 
-static void mailbox_receive(XMbox *MboxInstancePtr, bar_msg *bar_location_pointer) {
+static void mailbox_receive(Xreceive_box *MboxInstancePtr, bar_msg *bar_location_pointer) {
  	int received_bytes;
  	XMbox_Read(MboxInstancePtr, bar_location_pointer, 8, &received_bytes);
- 	bar_x[0] = bar_location_pointer->bar1_x;
- 	bar_x[1] = bar_location_pointer->bar2_x;
+  if (received_bytes == BAR_MSG_BYTES) {
+    pthread_mutex_lock(&mutex);
+    bar_x[0] = bar_location_pointer->bar1_x;
+    bar_x[1] = bar_location_pointer->bar2_x;
+    pthread_mutex_unlock(&mutex);
+  }
 }
 
 void* thread_mb_controller () {
@@ -349,8 +356,10 @@ void inform_ball_thread(int collision_type) {
 void update_score(int col) {
   if((newgold_id == col) || (oldgold_id == col)) {
     total_score +=2;
+    check_tenpt(void);
   } else {
     total_score +=1;
+    check_tenpt(void);
   }
 }
 
@@ -498,6 +507,7 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   int Status;
   XMutex_Config *MutexConfigPtr;
   XMbox_Config *ConfigPtr;
+  Xreceive_box_Config *RxConfigPtr;
 
   // Initialize semaphore for resource competion
   if( sem_init(&sem_gold, 1, 2) < 0 ) {
@@ -541,6 +551,17 @@ int main_prog(void) {   // This thread is statically created (as configured in t
     return XST_FAILURE;
   }
 
+  RxConfigPtr = XMbox_LookupConfig(MBOX_DEVICE_ID_1);
+  if (RxConfigPtr == (Xreceive_box_Config *)NULL) {
+    print("-- Error configuring Mbox uB1 receiver--\r\n");
+    return XST_FAILURE;
+  }
+
+  Status = XMbox_CfgInitialize(&receive_box, RxConfigPtr, RxConfigPtr->BaseAddress);
+  if (Status != XST_SUCCESS) {
+    print("-- Error initializing Mbox uB1 receiver--\r\n");
+    return XST_FAILURE;
+  }
 
   /** Initialize Threads
   * -----------------------------------------------------------------------------------
