@@ -402,14 +402,13 @@ void send_to_mb1() {
   bar_msg bar_msg;
   bar_msg.bar1_x = bar_x[0];
   bar_msg.bar2_x = bar_x[1];
-
   XMbox_WriteBlocking(&Mbox_bar, &bar_msg, BAR_MSG_BYTES);
 }
 
 void* thread_func_1 () {
   while(1) {
-	send_to_mb1();
     Mailbox_Receive(&Mbox);
+	send_to_mb1();
 	sleep(40);
   }
 }

@@ -25,12 +25,6 @@
 #define FPS					25
 
 #define PI					3.14159
-#define DISPLAY_COLUMNS         640
-#define DISPLAY_ROWS            480
-#define SCOREAREA_LEFT 		535
-#define SCOREAREA_TOP 		60
-#define SCOREAREA_RIGHT 	600
-#define SCOREAREA_BOTTOM 	420
 #define PLAYAREA_LEFT 		60
 #define PLAYAREA_TOP 		60
 #define PLAYAREA_WIDTH 		455
@@ -50,15 +44,11 @@
 #define BAR_WIDTH_S 		10
 #define BAR_WIDTH_A 		10
 #define BALL_RADIUS 		7
-#define INIT_BALL_X				288
-#define INIT_BALL_Y 			397
-#define INIT_BALL_SPEED_X       10
-#define INIT_BALL_SPEED_Y       10
-#define MAX_BALL_SPEED          40
-#define MIN_BALL_SPEED          2
+#define INIT_BALL_X				(PLAYAREA_LEFT + PLAYAREA_RIGHT)/2
+#define INIT_BALL_Y 			BAR_TOP_Y-30
 #define BALL_INIT_DIR 	        0
 #define BALL_INIT_SPEED         250
-#define BALL_MIN_SPEED			50
+#define BALL_MIN_SPEED			50		// TODO: Use in code
 #define BALL_MAX_SPEED			1000
 #define BALL_RADIUS				7
 
@@ -79,7 +69,7 @@ XMutex Mutex;
 #define STATE_MSG_BYTES				7*4 + MSG_MAX_DESTROYED*2*4
 #define BAR_MSG_BYTES       	8
 
-struct msg {
+typedef struct msg {
   int old_gold_col, new_gold_col;
   int ball_x_pos, ball_y_pos;
   int game_won;
@@ -104,7 +94,7 @@ typedef struct {
 
 pthread_attr_t attr;
 struct sched_param sched_par;
-pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, scoreboard;
+pthread_t mailbox_controller, ball, col1, col2, col3, col4, col5, col6, col7, col8, col9, col10;
 pthread_mutex_t mutex, uart_mutex;
 
 // declare the semaphore
@@ -197,10 +187,13 @@ static void mailbox_receive(XMbox *MboxInstancePtr, bar_msg *bar_location_pointe
 void* thread_mb_controller () {
  	bar_msg bar;
 	while(1) {
-    game_status = game_status || (columns_destroyed == 10);
-  	send_data_to_mb0();
+		game_status = game_status || (columns_destroyed == 10);
+		send_data_to_mb0();
+		// TODO: send destroyed_index also
+		// TODO: add ball2 to send
+		destroyed_index = 0;
 		if (game_status) {
-  		pthread_exit(0);
+			pthread_exit(0);
 		}
 		mailbox_receive(&Mbox, &bar);												// read bar locations from display processor (MB0)
 		sleep(40);
@@ -208,7 +201,7 @@ void* thread_mb_controller () {
 }
 
 // Returns 1 if collided, 0 if not
-// Saves collision type: 0: nothing. 1: top/bottom. 2: left/right. 3-6: corners, clockwise from top right
+// Saves collision type: 0: nothing. 1: top/bottom. 2: left/right. 3-6: corners, anti-clockwise from bottom right
 int collided(int circle_x, int circle_y, double rect_x, double rect_y, int rect_width, int rect_height, int *collision_type) {
 	double circle_distance_x, circle_distance_y, corner_distance_sq;
 
@@ -235,14 +228,14 @@ int collided(int circle_x, int circle_y, double rect_x, double rect_y, int rect_
 	// Circle within radius of corner
 	corner_distance_sq = pow((circle_distance_x - rect_width/2.0),2) + pow((circle_distance_y - rect_height/2.0),2);
 	if (corner_distance_sq <= pow(BALL_RADIUS, 2)) {
-		if (new_ball_x > rect_x) {
-			if (new_ball_y > rect_y) {
+		if (circle_x > rect_x) {
+			if (circle_y > rect_y) {
 				*collision_type = 3;
 			} else {
 				*collision_type = 4;
 			}
 		} else {
-			if (new_ball_y < rect_y) {
+			if (circle_y < rect_y) {
 				*collision_type = 5;
 			} else {
 				*collision_type = 6;
@@ -261,6 +254,7 @@ int brick_collided(int col, int row, int *collision_type) {
 }
 
 int reflect_about(int mirror_dir, int ball_dir) {
+	  xil_printf("mirror %d at %d\r\n", mirror_dir, xget_clock_ticks());
 	return (360 - ball_dir + 2*mirror_dir)%360;
 }
 
@@ -281,16 +275,16 @@ void* thread_ball () {
 		      ball_dir = reflect_about(0, ball_dir);
 			  break;
 		  case 3:
-			  ball_dir = reflect_about(315, ball_dir);
-			  break;
-		  case 4:
 			  ball_dir = reflect_about(45, ball_dir);
 			  break;
+		  case 4:
+			  ball_dir = reflect_about(315, ball_dir);
+			  break;
 		  case 5:
-			  ball_dir = reflect_about(135, ball_dir);
+			  ball_dir = reflect_about(225, ball_dir);
 			  break;
 		  case 6:
-			  ball_dir = reflect_about(225, ball_dir);
+			  ball_dir = reflect_about(135, ball_dir);
 			  break;
 		  }
 	  }
@@ -326,7 +320,7 @@ void* thread_ball () {
 	}
 
     // Deal with hitting zone edges last
-    if (new_ball_y <= 79) {
+    if (new_ball_y <= 79 && ball_dir <= 90 && ball_dir >= 270) {
     	ball_dir = reflect_about(90, ball_dir);
     }
     if (new_ball_x <= 79 || new_ball_x >= 501) {
@@ -334,14 +328,14 @@ void* thread_ball () {
     }
 
     // Check for lose condition
-	if (new_ball_y >= 410) {
+	if (new_ball_y >= 415) {
 	  game_status = -1;
 	  pthread_exit(0);
 	}
 
     // Update ballspeed_x/y according to speed/angle
 	ballspeed_x = ballspeed * sin(ball_dir * PI / 180);
-	ballspeed_y = ballspeed * cos(ball_dir * PI / 180);
+	ballspeed_y = ballspeed * - cos(ball_dir * PI / 180);
 
     // Update
     new_ball_x += ballspeed_x / FPS;
@@ -376,15 +370,13 @@ void register_destroyed_brick(int row, int col) {
 }
 
 void check_collisions_send_updates(int col, int *bricks_left) {
-	// for each brick
-	// if not destroyed
-	// check for collision
-	// if so: update destroyed bricks, score, and send collision data
   int row, collision_type;
+
   for(row=0; row<8; row++) {
 	  // only check collision if the specific brick is alive
 	  // TODO: Check ball1 and 2
 	  if(!brick_destroyed[col][row] && brick_collided(col, row, &collision_type)) {
+		  xil_printf ("destroyed %d %d at %d\r\n", col, row, xget_clock_ticks());
 		  brick_destroyed[col][row] = 1;
 		  *bricks_left = *bricks_left - 1;
 		  inform_ball_thread(collision_type);
@@ -504,12 +496,12 @@ int main_prog(void) {   // This thread is statically created (as configured in t
 
   // Initialize semaphore for resource competion
   if( sem_init(&sem_gold, 1, 2) < 0 ) {
-    print("Error while initializing semaphore sem_gold.\r\n");
+    xil_printf("Error while initializing semaphore sem_gold.\r\n");
   }
 
   // Initialize semaphore for resource competion
   if( sem_init(&sem_bricks, 1, 1) < 0 ) {
-    print("Error while initializing semaphore sem_bricks.\r\n");
+    xil_printf("Error while initializing semaphore sem_bricks.\r\n");
   }
 
   // Init SW Mutex
@@ -592,121 +584,39 @@ int main_prog(void) {   // This thread is statically created (as configured in t
   // thread_brick_col_1 (Brick cols share priority 3)
   sched_par.sched_priority = 3;
   pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_1
   ret = pthread_create (&col1, &attr, (void*)thread_brick_col_1, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_1...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 1 Thread launched with ID %d \r\n",col1);
-  }
 
   // thread_brick_col_2
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_2
-  ret = pthread_create (&col2, &attr, (void*)thread_brick_col_2, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_2...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 2 Thread launched with ID %d \r\n",col2);
-  }
+  ret |= pthread_create (&col2, &attr, (void*)thread_brick_col_2, NULL);
 
   // thread_brick_col_3
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread 5
-  ret = pthread_create (&col3, &attr, (void*)thread_brick_col_3, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_3...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 3 Thread launched with ID %d \r\n",col3);
-  }
+  ret |= pthread_create (&col3, &attr, (void*)thread_brick_col_3, NULL);
 
   // thread_brick_col_4
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_4
-  ret = pthread_create (&col4, &attr, (void*)thread_brick_col_4, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_4...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 4 launched with ID %d \r\n",col4);
-  }
+  ret |= pthread_create (&col4, &attr, (void*)thread_brick_col_4, NULL);
 
   // thread_brick_col_5
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_5
-  ret = pthread_create (&col5, &attr, (void*)thread_brick_col_5, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_5...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 5 launched with ID %d \r\n",col5);
-  }
+  ret |= pthread_create (&col5, &attr, (void*)thread_brick_col_5, NULL);
 
   // thread_brick_col_6
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_6
-  ret = pthread_create (&col6, &attr, (void*)thread_brick_col_6, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_6...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 6 launched with ID %d \r\n",col6);
-  }
+  ret |= pthread_create (&col6, &attr, (void*)thread_brick_col_6, NULL);
 
   // thread_brick_col_7
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_7
-  ret = pthread_create (&col7, &attr, (void*)thread_brick_col_7, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_7...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 7 launched with ID %d \r\n",col7);
-  }
+  ret |= pthread_create (&col7, &attr, (void*)thread_brick_col_7, NULL);
 
   // thread_brick_col_8
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_8
-  ret = pthread_create (&col8, &attr, (void*)thread_brick_col_8, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_8...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 8 launched with ID %d \r\n",col8);
-  }
+  ret |= pthread_create (&col8, &attr, (void*)thread_brick_col_8, NULL);
 
   // thread_brick_col_9
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_9
-  ret = pthread_create (&col9, &attr, (void*)thread_brick_col_9, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_9...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 9 launched with ID %d \r\n",col9);
-  }
+  ret |= pthread_create (&col9, &attr, (void*)thread_brick_col_9, NULL);
 
   // thread_brick_col_10
-  sched_par.sched_priority = 3;
-  pthread_attr_setschedparam(&attr,&sched_par);
-  //start thread_brick_col_10
-  ret = pthread_create (&col10, &attr, (void*)thread_brick_col_10, NULL);
-  if (ret != 0) {
-    xil_printf ("-- ERROR (%d) launching thread_brick_col_10...\r\n", ret);
-  }
-  else {
-    xil_printf ("Brick Column 10 launched with ID %d \r\n",col10);
+  ret |= pthread_create (&col10, &attr, (void*)thread_brick_col_10, NULL);
+
+  if (ret) {
+	  xil_printf ("-- ERROR (%d) launching thread_brick_col_7...\r\n", ret);
+  } else {
+	  xil_printf ("All brick threads launched.\r\n");
   }
 
   return 0;
