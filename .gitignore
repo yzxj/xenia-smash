@@ -20,4 +20,7 @@ MultiProcessor.sdk/lab3d-0/
 MultiProcessor.sdk/lab3d-1/
 MultiProcessor.sdk/webtalk/
 
-MultiProcessor.sdk/proj1/Debug/
+*.elf
+*.elf.size
+*.o
+*.a
