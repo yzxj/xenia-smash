@@ -58,6 +58,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <xmutex.h>
 
 /************************** Constant Definitions ****************************/
 /**
@@ -149,6 +150,11 @@ typedef struct {
 typedef struct {
   int bar1_x, bar2_x;
 } bar_msg;
+
+
+#define MUTEX_DEVICE_ID		XPAR_MUTEX_0_IF_1_DEVICE_ID
+#define MUTEX_NUM			0
+XMutex	Mutex;
 
 /************************** Function Prototypes *****************************/
 
@@ -376,8 +382,6 @@ void* thread_func_0 () {
 }
 
 void update_state(state_msg data) {
-  col_golden[0] = data.old_gold_col;
-  col_golden[1] = data.new_gold_col;
   ball_x = data.ball_x_pos;
   ball_y = data.ball_y_pos;
   score = data.total_score;
@@ -397,10 +401,10 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
   state_msg update_data;
   u32 bytes_read;
   int i;
-	XMbox_Read(MboxInstancePtr, &update_data, STATE_MSG_BYTES, &bytes_read);
-	if (bytes_read==STATE_MSG_BYTES) {
-		xil_printf("Received\r\n");
 
+	XMbox_Read(MboxInstancePtr, &update_data, STATE_MSG_BYTES, &bytes_read);
+
+	if (bytes_read==STATE_MSG_BYTES) {
 		// Remove old Screen Components and draw new ones
 		// TODO: #define COL_BG = BLACK;
 		TftDrawBall(&TftInstance, ball_x,ball_y, BLACK);
@@ -421,7 +425,7 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
 				destroy_brick(update_data.destroyed_x0, update_data.destroyed_y0);
 		}
 		// TODO: 2 bars 2 balls
-		if (update_data.old_gold_col != col_golden[0] || update_data.new_gold_col != col_golden[1]){
+		if ((update_data.old_gold_col != col_golden[0] || update_data.new_gold_col != col_golden[1]) && update_data.new_gold_col < 10){
 			xil_printf("replacing gold: %d %d\r\n", col_golden[0], col_golden[1]);
 			TftDrawColumn(&TftInstance, col_golden[0], GREEN);
 			TftDrawColumn(&TftInstance, col_golden[1], GREEN);
@@ -429,6 +433,8 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
 			TftDrawColumn(&TftInstance, update_data.old_gold_col, ORANGE);
 			TftDrawColumn(&TftInstance, update_data.new_gold_col, ORANGE);
 			xil_printf("done replacing gold\r\n");
+		  col_golden[0] = update_data.old_gold_col;
+		  col_golden[1] = update_data.new_gold_col;
 		}
 		// Save new data, including score/time/speed/bricksleft
 		update_state(update_data);
@@ -441,7 +447,10 @@ void send_to_mb1() {
   bar_msg bar_msg;
   bar_msg.bar1_x = bar_x[0];
   bar_msg.bar2_x = bar_x[1];
+
+  XMutex_Lock(&Mutex, MUTEX_NUM);
   XMbox_WriteBlocking(&Mbox_bar, &bar_msg, BAR_MSG_BYTES);
+  XMutex_Unlock(&Mutex, MUTEX_NUM);
 }
 
 void* thread_func_1 () {
@@ -542,10 +551,21 @@ int pb_init() {
 // This thread is statically created and has priority 0 (This is the highest possible)
 void* main_prog(void *arg) {
   print("-- Entering main_prog() --\r\n");
-  int ret;
+  int ret, Status;
+  XMutex_Config *MutexConfigPtr;
 
   // Initialize Mailbox
   mailbox_init();
+
+  // Init HW Mutex
+  MutexConfigPtr = XMutex_LookupConfig(MUTEX_DEVICE_ID);
+  if (MutexConfigPtr == (XMutex_Config *)NULL){
+	xil_printf ("B1-- ERROR  init HW mutex...\r\n");
+  }
+  Status = XMutex_CfgInitialize(&Mutex, MutexConfigPtr, MutexConfigPtr->BaseAddress);
+  if (Status != XST_SUCCESS){
+    xil_printf ("B1-- ERROR  init HW mutex...\r\n");
+  }
 
   // Initialize PushButton
   pb_init();

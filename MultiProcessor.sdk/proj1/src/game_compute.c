@@ -52,6 +52,9 @@
 #define BALL_MAX_SPEED			1000
 #define BALL_RADIUS				7
 
+#define SLEEP_BALL				10
+#define SLEEP_BRICK				10
+
 /*	Mailbox Declaration	*/
 #define MY_CPU_ID				XPAR_CPU_ID
 #define MBOX_DEVICE_ID			XPAR_MBOX_0_DEVICE_ID
@@ -114,20 +117,19 @@ sem_t sem_bricks;
 
 volatile int ball_dir = 0; 								// 0: up, 180: down
 volatile int ballspeed = 250;
-volatile int new_ball_x = INIT_BALL_X;
-volatile int new_ball_y = INIT_BALL_Y;
-volatile int ballspeed_x = 0;
-volatile int ballspeed_y = 250;
+volatile double ball_x = INIT_BALL_X;
+volatile double ball_y = INIT_BALL_Y;
+volatile double ballspeed_x = 0;
+volatile double ballspeed_y = 250;
+
 volatile int oldgold_id = 0;
 volatile int newgold_id = 0;
-
 volatile int total_score = 0;
 volatile int tenpt_counter = 0;
 volatile int twocol_counter = 2;						// track the number of golden columns we are changing
 
 volatile int game_status = 0;							// [0: In-progress], [-1: Lose], [1: Win]
 volatile int columns_destroyed = 0;						// tracks the number of columns the user has destroyed
-volatile int ball_beyond_y = 0;						// flag to check if ball has gone beyond lower screen limit of y (ie. lose)
 
 volatile int brick_destroyed[10][8];
 
@@ -162,12 +164,11 @@ void check_tenpt(void) {
 */
 void send_data_to_mb0() {
   struct msg send_msg;
-	xil_printf("newgold: %d\r\n", newgold_id);
   send_msg.old_gold_col = oldgold_id;
   send_msg.new_gold_col = newgold_id;
-  send_msg.ball_x_pos = new_ball_x;
-  send_msg.ball_y_pos = new_ball_y;
-  send_msg.ballspeed = ballspeed;
+  send_msg.ball_x_pos = (int) ball_x;
+  send_msg.ball_y_pos = (int) ball_y;
+  send_msg.ballspeed =  (int) ballspeed;
   send_msg.total_score = total_score;
   send_msg.destroyed_num = destroyed_index;
   send_msg.destroyed_x0 = destroyed_col[0];
@@ -276,11 +277,10 @@ int collided(int circle_x, int circle_y, double rect_x, double rect_y, int rect_
 int brick_collided(int col, int row, int *collision_type) {
 	double rect_x = 65 + col*(BRICK_GAP+BRICK_WIDTH)  + BRICK_WIDTH/2.0;
 	double rect_y = 65 + row*(BRICK_GAP+BRICK_HEIGHT) + BRICK_HEIGHT/2.0;
-	return collided(new_ball_x, new_ball_y, rect_x, rect_y, BRICK_WIDTH, BRICK_HEIGHT, collision_type);
+	return collided(ball_x, ball_y, rect_x, rect_y, BRICK_WIDTH, BRICK_HEIGHT, collision_type);
 }
 
 int reflect_about(int mirror_dir, int ball_dir) {
-	  xil_printf("angle %d hit mirror %d at %d\r\n", ball_dir, mirror_dir, xget_clock_ticks());
 	return (360 - ball_dir + 2*mirror_dir)%360;
 }
 
@@ -320,8 +320,8 @@ void* thread_ball () {
 	int bar_collision_type;
 	int bar1_x = bar_x[0] + BAR_WIDTH_TOTAL/2;
 	int bar1_y = bar_y[0] + BAR_HEIGHT/2.0;
-	int ball_dist_x = new_ball_x - bar1_x;
-	if (collided(new_ball_x, new_ball_y, bar1_x, bar1_y, BAR_WIDTH_TOTAL, BAR_HEIGHT, &bar_collision_type)) {
+	int ball_dist_x = ball_x - bar1_x;
+	if (collided(ball_x, ball_y, bar1_x, bar1_y, BAR_WIDTH_TOTAL, BAR_HEIGHT, &bar_collision_type)) {
 		switch(bar_collision_type) {
 		case 1:
 			ball_dir = reflect_about(90,ball_dir);
@@ -346,28 +346,28 @@ void* thread_ball () {
 	}
 
     // Deal with hitting zone edges last
-    if (new_ball_y <= 79 && ball_dir <= 90 && ball_dir >= 270) {
+    if (ball_y <= 68 && (ball_dir <= 90 || ball_dir >= 270)) {
     	ball_dir = reflect_about(90, ball_dir);
     }
-    if (new_ball_x <= 79 || new_ball_x >= 501) {
+    if (ball_x <= 68 || ball_x >= 507) {
     	ball_dir = reflect_about(0, ball_dir);
     }
 
     // Check for lose condition
-	if (new_ball_y >= 415) {
+	if (ball_y >= 412) {
 	  game_status = -1;
 	  pthread_exit(0);
 	}
 
     // Update ballspeed_x/y according to speed/angle
-	ballspeed_x = ballspeed * sin(ball_dir * PI / 180);
-	ballspeed_y = ballspeed * - cos(ball_dir * PI / 180);
+	ballspeed_x = ((double) ballspeed) * sin(ball_dir * PI / 180);
+	ballspeed_y = ((double) ballspeed) * - cos(ball_dir * PI / 180);
 
     // Update
-    new_ball_x += ballspeed_x / FPS;
-    new_ball_y += ballspeed_y / FPS;
+    ball_x += ballspeed_x * SLEEP_BALL / 1000.0;
+    ball_y += ballspeed_y * SLEEP_BALL / 1000.0;
 
-    sleep(40);
+    sleep(SLEEP_BALL);
   }
 }
 
@@ -432,7 +432,7 @@ void* thread_brick_col_1 () {
   while(1) {
 	  // NOTE: 0-based indexing.
 	  brick_thread_logic(0, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -440,7 +440,7 @@ void* thread_brick_col_2 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(1, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -448,7 +448,7 @@ void* thread_brick_col_3 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(2, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -456,7 +456,7 @@ void* thread_brick_col_4 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(3, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -464,7 +464,7 @@ void* thread_brick_col_5 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(4, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -472,7 +472,7 @@ void* thread_brick_col_6 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(5, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -480,7 +480,7 @@ void* thread_brick_col_7 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(6, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -488,7 +488,7 @@ void* thread_brick_col_8 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(7, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -496,7 +496,7 @@ void* thread_brick_col_9 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(8, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
@@ -504,7 +504,7 @@ void* thread_brick_col_10 () {
   int bricks_left = 8;
   while(1) {
 	  brick_thread_logic(9, &bricks_left);
-	  sleep(40);
+	  sleep(SLEEP_BRICK);
   }
 }
 
