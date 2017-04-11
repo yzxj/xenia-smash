@@ -120,7 +120,7 @@ volatile int ballspeed = 250;
 volatile double ball_x = INIT_BALL_X;
 volatile double ball_y = INIT_BALL_Y;
 volatile double ballspeed_x = 0;
-volatile double ballspeed_y = 250;
+volatile double ballspeed_y = 0;
 
 volatile int oldgold_id = 0;
 volatile int newgold_id = 0;
@@ -153,7 +153,6 @@ void check_tenpt(void) {
     sem_post(&sem_gold);
     sem_post(&sem_gold);
     // Increase ball speed
-    // TODO: semaphore?
     ballspeed = (ballspeed+25>1000) ? 1000 : ballspeed+25;
   }
 }
@@ -170,6 +169,7 @@ void send_data_to_mb0() {
   send_msg.ball_y_pos = (int) ball_y;
   send_msg.ballspeed =  (int) ballspeed;
   send_msg.total_score = total_score;
+  send_msg.game_won = game_status;
   send_msg.destroyed_num = destroyed_index;
   send_msg.destroyed_x0 = destroyed_col[0];
   send_msg.destroyed_y0 = destroyed_row[0];
@@ -184,7 +184,9 @@ void send_data_to_mb0() {
   send_msg.destroyed_x5 = destroyed_col[5];
   send_msg.destroyed_y5 = destroyed_row[5];
 
+  xil_printf("mb1 before writeblock\r\n");
   XMbox_WriteBlocking(&Mbox, &send_msg, STATE_MSG_BYTES);
+  xil_printf("mb1 after writeblock\r\n");
 }
 
 /* ------------------------------------------------------------------
@@ -193,7 +195,7 @@ void send_data_to_mb0() {
 */
 void compete_gold(int ID) {
   int randomizer = rand() % 3;
-  if (randomizer == 1 && sem_trywait(&sem_gold) == 0) {
+  if (randomizer == 1 && oldgold_id!=ID && newgold_id!=ID && sem_trywait(&sem_gold) == 0) {
     oldgold_id=newgold_id;
     newgold_id=ID;
   }
@@ -211,10 +213,15 @@ static void mailbox_receive(XMbox *MboxInstancePtr, bar_msg *bar_location_pointe
 }
 
 void* thread_mb_controller () {
+    init_state();
  	bar_msg bar;
 	while(1) {
-		game_status = game_status || (columns_destroyed == 10);
+	    xil_printf("In Progress\r\n");
+		if (columns_destroyed == 10) {
+			game_status = 1;
+		}
 		send_data_to_mb0();
+		  xil_printf("Game Sent\r\n");
 		// TODO: send destroyed_index also
 		// TODO: add ball2 to send
 		destroyed_index = 0;
@@ -223,7 +230,9 @@ void* thread_mb_controller () {
 			pthread_exit(0);
 		}
 		mailbox_receive(&Mbox, &bar);												// read bar locations from display processor (MB0)
-		sleep(40);
+
+		  xil_printf("Game Received\r\n");
+		  sleep(40);
 	}
 }
 
@@ -284,6 +293,54 @@ int reflect_about(int mirror_dir, int ball_dir) {
 	return (360 - ball_dir + 2*mirror_dir)%360;
 }
 
+void bar_collided(int bar) {
+	int bar_collision_type;
+	int bar_x_curr = bar_x[bar] + BAR_WIDTH_TOTAL/2;
+	int bar_y_curr = bar_y[bar] + BAR_HEIGHT/2.0;
+	int ball_dist_x = ball_x - bar_x_curr;
+	if (collided(ball_x, ball_y, bar_x_curr, bar_y_curr, BAR_WIDTH_TOTAL, BAR_HEIGHT, &bar_collision_type)) {
+		switch(bar_collision_type) {
+		case 1:
+			if (ball_dir>90 && ball_dir<270) {
+				ball_dir = reflect_about(90,ball_dir);
+				if (bar == 1) {
+					// Randomize for second player
+					int new_dir = rand()%75;
+					if (rand()%2 == 1) {
+						ball_dir = (360 - new_dir)%360;
+					} else {
+						ball_dir = new_dir;
+					}
+				}
+			}
+			if (bar == 0) {
+				// Normal behaviour for first player
+				if (ball_dist_x < -30) {
+					// Assumes ball hits from the top (because it should only hit from the top)
+					int next_ball_dir = (360+ball_dir-15)%360;
+					ball_dir = (next_ball_dir<285 && next_ball_dir>75) 	 ?  285	: next_ball_dir;
+				} else if (ball_dist_x > 30) {
+					// Assumes ball hits from the top (because it should only hit from the top)
+					int next_ball_dir = (360+ball_dir+15)%360;
+					ball_dir = (next_ball_dir<285 && next_ball_dir>75) 	 ?  75	: next_ball_dir;
+				} else if (ball_dist_x < -20) {
+					ballspeed = (ballspeed-100<50) 	 ? 50 	: ballspeed-100;
+				} else if (ball_dist_x > 20) {
+					ballspeed = (ballspeed+100>1000) ? 1000 : ballspeed+100;
+				}
+			}
+			break;
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+			ball_dir += 180;
+			break;
+		}
+	}
+}
+
 void* thread_ball () {
   int i = 0;
   int msgid;
@@ -316,45 +373,19 @@ void* thread_ball () {
 	  }
 	}
 	// Deal with hitting the bar next (shouldn't happen if hitting bricks)
-	// TODO: check bar 2.
-	int bar_collision_type;
-	int bar1_x = bar_x[0] + BAR_WIDTH_TOTAL/2;
-	int bar1_y = bar_y[0] + BAR_HEIGHT/2.0;
-	int ball_dist_x = ball_x - bar1_x;
-	if (collided(ball_x, ball_y, bar1_x, bar1_y, BAR_WIDTH_TOTAL, BAR_HEIGHT, &bar_collision_type)) {
-		switch(bar_collision_type) {
-		case 1:
-			ball_dir = reflect_about(90,ball_dir);
-			if (ball_dist_x < -30) {
-				ball_dir = (ball_dir-15<15) 	 ? 15 	: ball_dir-15;
-			} else if (ball_dist_x > 30) {
-				ball_dir = (ball_dir+15>165) 	 ? 165 	: ball_dir+15;
-			} else if (ball_dist_x < -20) {
-				ballspeed = (ballspeed-100<50) 	 ? 50 	: ballspeed-100;
-			} else if (ball_dist_x > 20) {
-				ballspeed = (ballspeed+100>1000) ? 1000 : ballspeed+100;
-			}
-			break;
-		case 2:
-		case 3:
-		case 4:
-		case 5:
-		case 6:
-			ball_dir += 180;
-			break;
-		}
-	}
+	bar_collided(1);
+	bar_collided(0);
 
     // Deal with hitting zone edges last
-    if (ball_y <= 68 && (ball_dir <= 90 || ball_dir >= 270)) {
+    if (ball_y <= 74 && (ball_dir <= 90 || ball_dir >= 270)) {
     	ball_dir = reflect_about(90, ball_dir);
     }
-    if (ball_x <= 68 || ball_x >= 507) {
+    if (ball_x <= 74 || ball_x >= 501) {
     	ball_dir = reflect_about(0, ball_dir);
     }
 
     // Check for lose condition
-	if (ball_y >= 412) {
+	if (ball_y >= 410) {
 	  game_status = -1;
 	  pthread_exit(0);
 	}
@@ -508,12 +539,16 @@ void* thread_brick_col_10 () {
   }
 }
 
+void init_state() {
+	srand(xget_clock_ticks());
+	ball_dir = rand()%360;
+}
+
 /**
 *  Main - Inititialization for Semaphore, HW+SW Mutex, GPIOs, Mailbox and Threads
 */
 
 int main_prog(void) {   // This thread is statically created (as configured in the kernel configuration) and has priority 0 (This is the highest possible)
-
   int ret;
   int Status;
   XMutex_Config *MutexConfigPtr;
