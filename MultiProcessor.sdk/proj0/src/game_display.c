@@ -490,6 +490,13 @@ static void Mailbox_Receive(XMbox *MboxInstancePtr) {
 			pthread_exit(0);
 		}
 		if (game_won == -1) {
+			TftDrawRect(&TftInstance, PLAYAREA_LEFT, PLAYAREA_TOP, PLAYAREA_WIDTH,PLAYAREA_HEIGHT, BLACK);
+			// Write "Game Over" in white on black
+			XTft_SetColor(&TftInstance, WHITE, BLACK);
+			XTft_SetPosChar(&TftInstance, PLAYAREA_LEFT/2+PLAYAREA_RIGHT/2 - 32, (PLAYAREA_TOP+PLAYAREA_BOTTOM)/2);
+			char score_word[] = "Game Over";
+			TftWriteWord(score_word);
+
 			xil_printf("You Lose!\r\n");
 			pthread_exit(0);
 		}
