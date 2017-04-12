@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <time.h>
 #include <math.h>
 #include <xparameters.h>
 #include <pthread.h>
@@ -21,8 +20,6 @@
 #include <sys/msg.h>
 #include <sys/ipc.h>
 #include <sys/timer.h>
-
-#define FPS					25
 
 #define PI					3.14159
 #define PLAYAREA_LEFT 		60
